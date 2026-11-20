@@ -189,7 +189,7 @@ function renderArticles() {
       <div>
         <div class="meta-row" style="margin-bottom:0.8rem;">
           <span>✍️ ${art.author}</span>
-          <span>❤️ ${art.likes} · 💬 ${art.comments.length}</span>
+          <span>❤️ ${art.likes} · 💬 ${(art.comments || []).length}</span>
         </div>
         <div style="display:flex; gap:0.5rem;">
           <button class="btn btn-primary" onclick="openArticle('${art.id}')">Читати</button>
@@ -203,6 +203,7 @@ function renderArticles() {
 window.openArticle = (id) => {
   const art = state.articles.find(a => a.id === id);
   if (!art) return;
+  const comments = art.comments || [];
 
   openModal(`
     <span class="badge">${art.category}</span>
@@ -210,9 +211,9 @@ window.openArticle = (id) => {
     <p class="subtitle" style="margin-bottom:1.2rem;">Автор: ${art.author} · ${art.date}</p>
     <div class="reading-text">${art.content}</div>
     <hr style="margin:1.5rem 0; border-color:var(--border);" />
-    <h3>Коментарі (${art.comments.length})</h3>
+    <h3>Коментарі (${comments.length})</h3>
     <div>
-      ${art.comments.map(c => `<div class="comment-box"><strong>${c.author}:</strong> ${c.text}</div>`).join('') || '<p class="subtitle">Поки немає коментарів.</p>'}
+      ${comments.map(c => `<div class="comment-box"><strong>${c.author}:</strong> ${c.text}</div>`).join('') || '<p class="subtitle">Поки немає коментарів.</p>'}
     </div>
     <form id="commentForm" class="stack-form" style="margin-top:1rem;">
       <input type="text" id="commentInput" class="input" placeholder="Написати коментар..." required />
@@ -300,7 +301,6 @@ function renderProfile() {
   const myArticles = state.articles.filter(a => a.author === user.name);
   const myBooks = state.books.filter(b => b.author_id === user.id || b.author === user.name);
 
-  // Збираємо всі розблоковані користувачем глави
   const unlockedItems = [];
   state.books.forEach(book => {
     (book.chapters || []).forEach(ch => {
@@ -416,41 +416,156 @@ document.getElementById('chapterForm').addEventListener('submit', async (e) => {
   }
 });
 
-// --- Адмін-панель ---
+// --- Розширена Адмін-панель ---
 function renderAdmin() {
-  const stats = document.getElementById('adminStats');
-  const box = document.getElementById('adminContent');
-  stats.innerHTML = `
+  const currentUser = getCurrentUser();
+  if (!currentUser || currentUser.role !== 'admin') return navigateTo('articles');
+
+  const totalCoins = state.users.reduce((sum, u) => sum + (u.coins || 0), 0);
+  const totalComments = state.articles.reduce((sum, a) => sum + (a.comments || []).length, 0);
+
+  document.getElementById('adminStats').innerHTML = `
     <div class="stat-box"><strong>${state.users.length}</strong>Користувачів</div>
-    <div class="stat-box"><strong>${state.articles.length}</strong>Статей</div>
-    <div class="stat-box"><strong>${state.books.length}</strong>Книг</div>
+    <div class="stat-box"><strong>${totalCoins} 🪙</strong>Монет в обігу</div>
+    <div class="stat-box"><strong>${state.articles.length}</strong>Статей (${totalComments} ком.)</div>
+    <div class="stat-box"><strong>${state.books.length}</strong>Книг у бібліотеці</div>
   `;
 
-  box.innerHTML = `
-    <h3>Модерація статей</h3>
-    ${state.articles.map(a => `
-      <div class="chapter-item">
-        <span><strong>${a.title}</strong> (${a.author})</span>
-        <button class="btn btn-danger" onclick="adminDeleteArticle('${a.id}')">Видалити</button>
+  const usersHtml = state.users.map(u => {
+    const nextRole = u.role === 'admin' ? 'user' : 'admin';
+    return `
+      <div class="chapter-item" style="flex-wrap:wrap;">
+        <div>
+          <strong>${u.name}</strong> <span class="badge">${u.role === 'admin' ? '👑 Адмін' : '🪶 Бард'}</span>
+          <div class="subtitle" style="font-size:0.82rem;">${u.email} · Баланс: <strong>${u.coins} 🪙</strong></div>
+        </div>
+        <div style="display:flex; gap:0.4rem; flex-wrap:wrap; align-items:center;">
+          <button class="btn" onclick="adminCoins('${u.id}', 50)" title="Нарахувати 50 монет">+50 🪙</button>
+          <button class="btn" onclick="adminCoins('${u.id}', -20)" title="Списати 20 монет">-20 🪙</button>
+          <button class="btn" onclick="adminCustomCoins('${u.id}', '${u.name}')">± Інша сума</button>
+          ${u.id !== currentUser.id
+            ? `<button class="btn" onclick="adminRole('${u.id}', '${nextRole}')">${nextRole === 'admin' ? 'Зробити Адміном' : 'Зняти Адміна'}</button>`
+            : ''}
+        </div>
       </div>
-    `).join('')}
+    `;
+  }).join('');
+
+  const booksHtml = state.books.length
+    ? state.books.map(b => `
+        <div style="border:1px solid var(--border); border-radius:12px; padding:0.9rem; margin-top:0.75rem;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+            <div>
+              <strong>📚 ${b.title}</strong> <span class="subtitle">(${b.author})</span>
+            </div>
+            <button class="btn btn-danger" onclick="adminDeleteBook('${b.id}')">Видалити книгу</button>
+          </div>
+          <div style="margin-top:0.5rem;">
+            ${(b.chapters || []).map(ch => `
+              <div class="chapter-item">
+                <span>${ch.title} <small class="subtitle">(${ch.price} 🪙)</small></span>
+                <button class="btn btn-danger" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="adminDeleteChapter('${b.id}', '${ch.id}')">Видалити главу</button>
+              </div>
+            `).join('') || '<small class="subtitle">У книзі немає глав</small>'}
+          </div>
+        </div>
+      `).join('')
+    : '<p class="subtitle">Книг поки немає.</p>';
+
+  const articlesHtml = state.articles.length
+    ? state.articles.map(a => `
+        <div style="border:1px solid var(--border); border-radius:12px; padding:0.9rem; margin-top:0.75rem;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+            <span><strong>📜 ${a.title}</strong> <span class="subtitle">(${a.author})</span></span>
+            <button class="btn btn-danger" onclick="adminDeleteArticle('${a.id}')">Видалити статтю</button>
+          </div>
+          ${(a.comments || []).length
+            ? `<div style="margin-top:0.5rem;">
+                ${a.comments.map(c => `
+                  <div class="chapter-item">
+                    <span style="font-size:0.88rem;">💬 <strong>${c.author}:</strong> ${c.text}</span>
+                    <button class="btn btn-danger" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="adminDeleteComment('${a.id}', '${c.id}')">Видалити</button>
+                  </div>
+                `).join('')}
+              </div>`
+            : ''}
+        </div>
+      `).join('')
+    : '<p class="subtitle">Статей поки немає.</p>';
+
+  document.getElementById('adminContent').innerHTML = `
+    <h3>👥 Користувачі та скарбниця</h3>
+    ${usersHtml}
+
+    <hr style="margin:1.6rem 0; border-color:var(--border);" />
+    <h3>📚 Модерація книг та глав</h3>
+    ${booksHtml}
+
+    <hr style="margin:1.6rem 0; border-color:var(--border);" />
+    <h3>📜 Модерація статей та коментарів</h3>
+    ${articlesHtml}
   `;
 }
 
+window.adminCoins = async (userId, delta) => {
+  try {
+    await TaliesinAPI.adminAdjustUserCoins(userId, delta);
+    await refresh();
+  } catch (err) {
+    alert(err.message);
+  }
+};
+
+window.adminCustomCoins = async (userId, userName) => {
+  const input = prompt(`Введіть суму монет для користувача «${userName}» (наприклад, 100 або -30):`);
+  if (input === null) return;
+  await window.adminCoins(userId, Number(input));
+};
+
+window.adminRole = async (userId, nextRole) => {
+  await TaliesinAPI.adminToggleUserRole(userId, nextRole);
+  await refresh();
+};
+
+window.adminDeleteBook = async (bookId) => {
+  if (!confirm('Видалити цю книгу разом з усіма її главами?')) return;
+  await TaliesinAPI.adminDeleteBook(bookId);
+  await refresh();
+};
+
+window.adminDeleteChapter = async (bookId, chapterId) => {
+  if (!confirm('Видалити цю главу?')) return;
+  await TaliesinAPI.adminDeleteChapter(bookId, chapterId);
+  await refresh();
+};
+
+window.adminDeleteComment = async (articleId, commentId) => {
+  await TaliesinAPI.adminDeleteComment(articleId, commentId);
+  await refresh();
+};
+
 window.adminDeleteArticle = async (id) => {
+  if (!confirm('Видалити цю статтю?')) return;
   await TaliesinAPI.deleteArticle(id);
   await refresh();
-  renderAdmin();
 };
 
 // --- Ініціалізація ---
 async function refresh() {
-  state = await TaliesinAPI.getState();
+  try {
+    state = await TaliesinAPI.getState();
+  } catch (err) {
+    console.error('Помилка підключення до Supabase:', err);
+    state = { users: [], currentUserId: null, articles: [], books: [] };
+  }
   renderHeader();
   renderArticles();
   renderBooks();
   if (!document.getElementById('view-profile').classList.contains('hidden')) {
     renderProfile();
+  }
+  if (!document.getElementById('view-admin').classList.contains('hidden')) {
+    renderAdmin();
   }
 }
 
