@@ -1,119 +1,84 @@
-const DB_KEY = 'taliesin_portal_db_v1';
+const SUPABASE_URL = 'https://pxvydxpbrdpjkbroonwv.supabase.co/rest/v1/';
+const SUPABASE_ANON_KEY = 'sb_publishable_sFE27f6RWBwS5rpNaOZszw_J6Nv7r_w';
 
-const SEED_DATA = {
-  users: [
-    { id: 'u1', name: 'Талієсін Бард', email: 'bard@taliesin.wales', role: 'admin', coins: 120, unlockedChapters: ['c1', 'c2'] },
-    { id: 'u2', name: 'Керідвен', email: 'reader@taliesin.wales', role: 'user', coins: 25, unlockedChapters: ['c1'] }
-  ],
-  currentUserId: 'u2',
-  articles: [
-    {
-      id: 'a1',
-      title: 'Три краплі натхнення з казана Керідвен',
-      category: 'Міфологія',
-      author: 'Талієсін Бард',
-      date: '2026-11-18',
-      likes: 14,
-      content: 'У валлійській традиції Авен (Awen) — це не просто поетичний хист, а раптове осяяння, що поєднує пам’ять минулого та бачення майбутнього.\n\nКоли юний Ґвіон Бах випадково скуштував три вогняні краплі з казана мудрості, світ перестав бути для нього набором розрізнених речей — кожен вітер і кожен камінь отримали власний голос.',
-      comments: [
-        { id: 'cm1', author: 'Керідвен', text: 'Чудовий переказ! Дуже пасує до вечірнього читання біля вогню.' }
-      ]
-    },
-    {
-      id: 'a2',
-      title: 'Чому стародавні барди цінували стислість метафори',
-      category: 'Аналіз',
-      author: 'Керідвен',
-      date: '2026-11-19',
-      likes: 9,
-      content: 'У ранній кельтській поезії зайве слово вважалося ознакою слабкої думки. Образ мав бити точно, як іскра з кременю в темряві.\n\nСаме тому тріади — групи з трьох пов’язаних образів — стали основою збереження знань без паперу.',
-      comments: []
-    }
-  ],
-  books: [
-    {
-      id: 'b1',
-      title: 'Хроніки Срібної Арфи',
-      author: 'Талієсін Бард',
-      description: 'Подорож мандрівного співця крізь туманні долини Гвінеду в пошуках загубленої пісні.',
-      chapters: [
-        { id: 'c1', title: 'Глава 1. Попіл і зорі', price: 0, content: 'Ніч опустилася на пагорби швидко, залишаючи по собі лише запах вологого вересу та диму від далеких вогнищ. Арфа за спиною здавалася важчою, ніж уранці...' },
-        { id: 'c2', title: 'Глава 2. Міст через Афон', price: 15, content: 'Біля кам’яного броду на нього вже чекали. Старий перевізник не просив срібла — лише одну правдиву історію, якої ще не чув вітер...' },
-        { id: 'c3', title: 'Глава 3. Таємниця Котла', price: 25, content: 'У підземеллі фортеці пахло сушеними травами та розпеченою міддю. Три іскри злетіли вгору, освітивши давні руни на стінах...' }
-      ]
-    }
-  ]
-};
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const SESSION_KEY = 'taliesin_current_user_id';
 
-function loadDB() {
-  const raw = localStorage.getItem(DB_KEY);
-  if (!raw) {
-    localStorage.setItem(DB_KEY, JSON.stringify(SEED_DATA));
-    return structuredClone(SEED_DATA);
-  }
-  return JSON.parse(raw);
-}
-
-function saveDB(db) {
-  localStorage.setItem(DB_KEY, JSON.stringify(db));
-}
-
-// Публічний асинхронний API-шар (легко замінюється на fetch / Firebase / Supabase)
 window.TaliesinAPI = {
   async getState() {
-    return loadDB();
+    const [usersRes, articlesRes, booksRes] = await Promise.all([
+      supabase.from('profiles').select('*'),
+      supabase.from('articles').select('*').order('created_at', { ascending: false }),
+      supabase.from('books').select('*').order('created_at', { ascending: false })
+    ]);
+
+    const users = (usersRes.data || []).map(u => ({
+      ...u,
+      unlockedChapters: u.unlocked_chapters || []
+    }));
+
+    return {
+      users,
+      currentUserId: localStorage.getItem(SESSION_KEY) || null,
+      articles: articlesRes.data || [],
+      books: booksRes.data || []
+    };
   },
 
   async login(email, name, role = 'user') {
-    const db = loadDB();
-    let user = db.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    const cleanEmail = email.trim().toLowerCase();
+    let { data: user } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('email', cleanEmail)
+      .maybeSingle();
+
     if (!user) {
-      user = {
+      const newUser = {
         id: 'u_' + Date.now(),
-        name: name || email.split('@')[0],
-        email,
+        name: name.trim() || cleanEmail.split('@')[0],
+        email: cleanEmail,
         role,
         coins: 30,
-        unlockedChapters: ['c1']
+        unlocked_chapters: []
       };
-      db.users.push(user);
+      const { data, error } = await supabase.from('profiles').insert(newUser).select().single();
+      if (error) throw new Error(error.message);
+      user = data;
     }
-    db.currentUserId = user.id;
-    saveDB(db);
-    return user;
+
+    localStorage.setItem(SESSION_KEY, user.id);
+    return { ...user, unlockedChapters: user.unlocked_chapters || [] };
   },
 
   async switchDemoRole(role) {
-    const db = loadDB();
-    const target = db.users.find(u => u.role === role);
-    if (target) {
-      db.currentUserId = target.id;
-      saveDB(db);
-    }
-    return target;
+    const email = role === 'admin' ? 'bard@taliesin.wales' : 'reader@taliesin.wales';
+    const name = role === 'admin' ? 'Талієсін Бард' : 'Керідвен';
+    return this.login(email, name, role);
   },
 
   async logout() {
-    const db = loadDB();
-    db.currentUserId = null;
-    saveDB(db);
+    localStorage.removeItem(SESSION_KEY);
   },
 
   async addCoins(amount) {
-    const db = loadDB();
-    const user = db.users.find(u => u.id === db.currentUserId);
-    if (!user) throw new Error('Потрібна авторизація');
-    user.coins += amount;
-    saveDB(db);
-    return user.coins;
+    const userId = localStorage.getItem(SESSION_KEY);
+    if (!userId) throw new Error('Потрібна авторизація');
+
+    const { data: user } = await supabase.from('profiles').select('coins').eq('id', userId).single();
+    const updatedCoins = (user?.coins || 0) + amount;
+
+    const { error } = await supabase.from('profiles').update({ coins: updatedCoins }).eq('id', userId);
+    if (error) throw new Error(error.message);
+    return updatedCoins;
   },
 
   async createArticle({ title, category, content }) {
-    const db = loadDB();
-    const user = db.users.find(u => u.id === db.currentUserId);
-    if (!user) throw new Error('Увійдіть, щоб публікувати статті');
-    const article = {
-      id: 'a_' + Date.now(),
+    const userId = localStorage.getItem(SESSION_KEY);
+    if (!userId) throw new Error('Увійдіть, щоб публікувати статті');
+
+    const { data: user } = await supabase.from('profiles').select('name').eq('id', userId).single();
+    const { data, error } = await supabase.from('articles').insert({
       title,
       category,
       author: user.name,
@@ -121,79 +86,88 @@ window.TaliesinAPI = {
       likes: 1,
       content,
       comments: []
-    };
-    db.articles.unshift(article);
-    saveDB(db);
-    return article;
+    }).select().single();
+
+    if (error) throw new Error(error.message);
+    return data;
   },
 
   async toggleLike(articleId) {
-    const db = loadDB();
-    const art = db.articles.find(a => a.id === articleId);
-    if (art) {
-      art.likes += 1;
-      saveDB(db);
-    }
-    return art;
+    const { data: art } = await supabase.from('articles').select('likes').eq('id', articleId).single();
+    if (!art) return;
+    await supabase.from('articles').update({ likes: art.likes + 1 }).eq('id', articleId);
   },
 
   async addComment(articleId, text) {
-    const db = loadDB();
-    const user = db.users.find(u => u.id === db.currentUserId);
-    if (!user) throw new Error('Увійдіть, щоб залишати коментарі');
-    const art = db.articles.find(a => a.id === articleId);
-    if (art) {
-      art.comments.push({ id: 'cm_' + Date.now(), author: user.name, text });
-      saveDB(db);
-    }
-    return art;
+    const userId = localStorage.getItem(SESSION_KEY);
+    if (!userId) throw new Error('Увійдіть, щоб залишати коментарі');
+
+    const [{ data: user }, { data: art }] = await Promise.all([
+      supabase.from('profiles').select('name').eq('id', userId).single(),
+      supabase.from('articles').select('comments').eq('id', articleId).single()
+    ]);
+
+    const nextComments = [...(art.comments || []), { id: 'cm_' + Date.now(), author: user.name, text }];
+    await supabase.from('articles').update({ comments: nextComments }).eq('id', articleId);
   },
 
   async deleteArticle(articleId) {
-    const db = loadDB();
-    db.articles = db.articles.filter(a => a.id !== articleId);
-    saveDB(db);
+    await supabase.from('articles').delete().eq('id', articleId);
   },
 
   async unlockChapter(chapterId, price) {
-    const db = loadDB();
-    const user = db.users.find(u => u.id === db.currentUserId);
-    if (!user) throw new Error('Увійдіть у профіль для читання платних глав');
-    if (user.unlockedChapters.includes(chapterId)) return true;
+    const userId = localStorage.getItem(SESSION_KEY);
+    if (!userId) throw new Error('Увійдіть у профіль для читання платних глав');
+
+    const { data: user } = await supabase.from('profiles').select('*').eq('id', userId).single();
+    const unlocked = user.unlocked_chapters || [];
+
+    if (unlocked.includes(chapterId)) return true;
     if (user.coins < price) throw new Error('Недостатньо монет! Перегляньте рекламу, щоб поповнити баланс.');
-    user.coins -= price;
-    user.unlockedChapters.push(chapterId);
-    saveDB(db);
+
+    const { error } = await supabase.from('profiles').update({
+      coins: user.coins - price,
+      unlocked_chapters: [...unlocked, chapterId]
+    }).eq('id', userId);
+
+    if (error) throw new Error(error.message);
     return true;
   },
 
   async addChapter({ bookId, newBookTitle, newBookDesc, chapTitle, price, content }) {
-    const db = loadDB();
-    const user = db.users.find(u => u.id === db.currentUserId);
-    if (!user) throw new Error('Потрібна авторизація');
+    const userId = localStorage.getItem(SESSION_KEY);
+    if (!userId) throw new Error('Потрібна авторизація');
 
-    let book = db.books.find(b => b.id === bookId);
-    if (!book && newBookTitle.trim()) {
-      book = {
-        id: 'b_' + Date.now(),
-        title: newBookTitle.trim(),
-        author: user.name,
-        description: newBookDesc.trim() || 'Авторська книга порталу tali_e_sin',
-        chapters: []
-      };
-      db.books.unshift(book);
-    }
-    if (!book) throw new Error('Оберіть книгу або введіть назву нової');
-
+    const { data: user } = await supabase.from('profiles').select('*').eq('id', userId).single();
     const newChap = {
       id: 'c_' + Date.now(),
       title: chapTitle,
       price: Number(price) || 0,
       content
     };
-    book.chapters.push(newChap);
-    user.unlockedChapters.push(newChap.id);
-    saveDB(db);
-    return book;
+
+    let targetBookId = bookId;
+
+    if (!targetBookId && newBookTitle.trim()) {
+      const { data: createdBook, error } = await supabase.from('books').insert({
+        title: newBookTitle.trim(),
+        author: user.name,
+        description: newBookDesc.trim() || 'Авторська книга порталу tali_e_sin',
+        chapters: [newChap]
+      }).select().single();
+
+      if (error) throw new Error(error.message);
+      targetBookId = createdBook.id;
+    } else if (targetBookId) {
+      const { data: existingBook } = await supabase.from('books').select('chapters').eq('id', targetBookId).single();
+      const updatedChapters = [...(existingBook.chapters || []), newChap];
+      await supabase.from('books').update({ chapters: updatedChapters }).eq('id', targetBookId);
+    } else {
+      throw new Error('Оберіть книгу або введіть назву нової');
+    }
+
+    // Автоматично відкриваємо автору його власну главу
+    const unlocked = [...(user.unlocked_chapters || []), newChap.id];
+    await supabase.from('profiles').update({ unlocked_chapters: unlocked }).eq('id', userId);
   }
 };
