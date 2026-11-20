@@ -26,14 +26,18 @@ document.getElementById('themeToggle').addEventListener('click', () => {
 });
 
 // --- Навігація ---
+function navigateTo(target) {
+  document.querySelectorAll('.nav-link').forEach(n => n.classList.toggle('active', n.dataset.nav === target));
+  document.querySelectorAll('.view-section').forEach(sec => sec.classList.toggle('hidden', sec.id !== `view-${target}`));
+  if (target === 'write') populateBookSelect();
+  if (target === 'profile') renderProfile();
+  if (target === 'admin') renderAdmin();
+}
+
 document.querySelectorAll('[data-nav]').forEach(btn => {
   btn.addEventListener('click', (e) => {
     e.preventDefault();
-    const target = btn.dataset.nav;
-    document.querySelectorAll('.nav-link').forEach(n => n.classList.toggle('active', n.dataset.nav === target));
-    document.querySelectorAll('.view-section').forEach(sec => sec.classList.toggle('hidden', sec.id !== `view-${target}`));
-    if (target === 'write') populateBookSelect();
-    if (target === 'admin') renderAdmin();
+    navigateTo(btn.dataset.nav);
   });
 });
 
@@ -59,16 +63,21 @@ function renderHeader() {
   const user = getCurrentUser();
   document.getElementById('userCoins').textContent = user ? user.coins : 0;
   document.querySelectorAll('.admin-only').forEach(el => el.classList.toggle('hidden', !user || user.role !== 'admin'));
+  document.querySelectorAll('.auth-only').forEach(el => el.classList.toggle('hidden', !user));
 
   const authArea = document.getElementById('authArea');
   if (user) {
     authArea.innerHTML = `
-      <span class="badge">${user.role === 'admin' ? '👑 Адмін' : '🪶 Автор'}: ${user.name}</span>
+      <button class="badge" id="headerProfileBadge" style="border:none; cursor:pointer;" title="Відкрити особистий кабінет">
+        ${user.role === 'admin' ? '👑 Адмін' : '🪶 Автор'}: ${user.name}
+      </button>
       <button class="btn" id="logoutBtn">Вийти</button>
     `;
+    document.getElementById('headerProfileBadge').onclick = () => navigateTo('profile');
     document.getElementById('logoutBtn').onclick = async () => {
       await TaliesinAPI.logout();
       await refresh();
+      navigateTo('articles');
     };
   } else {
     authArea.innerHTML = `<button class="btn btn-primary" id="openAuthBtn">Увійти / Реєстрація</button>`;
@@ -247,7 +256,7 @@ function renderBooks() {
       </div>
       <div>
         <strong>Глави:</strong>
-        ${book.chapters.map(ch => {
+        ${(book.chapters || []).map(ch => {
           const isOpen = ch.price === 0 || unlocked.includes(ch.id);
           return `
             <div class="chapter-item">
@@ -270,7 +279,7 @@ window.readChapter = async (bookId, chapterId) => {
 
   try {
     if (chap.price > 0) {
-      await TaliesinAPI.unlockChapter(chap.id, chap.price);
+      await TaliesinAPI.unlockChapter(chap.id, chap.price, chap.title, book.author_id);
       await refresh();
     }
     openModal(`
@@ -282,6 +291,79 @@ window.readChapter = async (bookId, chapterId) => {
     alert(err.message);
   }
 };
+
+// --- Особистий кабінет (Профіль) ---
+function renderProfile() {
+  const user = getCurrentUser();
+  if (!user) return navigateTo('articles');
+
+  const myArticles = state.articles.filter(a => a.author === user.name);
+  const myBooks = state.books.filter(b => b.author_id === user.id || b.author === user.name);
+
+  // Збираємо всі розблоковані користувачем глави
+  const unlockedItems = [];
+  state.books.forEach(book => {
+    (book.chapters || []).forEach(ch => {
+      if (user.unlockedChapters.includes(ch.id)) {
+        unlockedItems.push({ bookId: book.id, bookTitle: book.title, chapter: ch });
+      }
+    });
+  });
+
+  document.getElementById('profileSummary').innerHTML = `
+    <div class="stat-box"><strong>${user.coins} 🪙</strong>Поточний баланс</div>
+    <div class="stat-box"><strong>${unlockedItems.length}</strong>Куплених / відкритих глав</div>
+    <div class="stat-box"><strong>${myArticles.length + myBooks.length}</strong>Створених творів</div>
+  `;
+
+  document.getElementById('profileNewName').value = user.name;
+
+  const history = user.coinHistory || [];
+  document.getElementById('profileHistoryList').innerHTML = history.length
+    ? history.map(tx => `
+        <div class="chapter-item">
+          <div>
+            <div style="font-size:0.9rem; font-weight:600;">${tx.label}</div>
+            <small class="subtitle">${tx.date}</small>
+          </div>
+          <strong style="color:${tx.delta >= 0 ? 'var(--accent)' : 'var(--danger)'};">
+            ${tx.delta >= 0 ? `+${tx.delta}` : tx.delta} 🪙
+          </strong>
+        </div>
+      `).join('')
+    : '<p class="subtitle">Історія операцій поки порожня.</p>';
+
+  document.getElementById('profileChaptersList').innerHTML = unlockedItems.length
+    ? unlockedItems.map(item => `
+        <div class="chapter-item">
+          <div>
+            <div style="font-size:0.9rem; font-weight:600;">${item.chapter.title}</div>
+            <small class="subtitle">${item.bookTitle}</small>
+          </div>
+          <button class="btn" onclick="readChapter('${item.bookId}', '${item.chapter.id}')">Читати</button>
+        </div>
+      `).join('')
+    : '<p class="subtitle">Ви ще не розблокували жодної платної глави.</p>';
+
+  const worksHtml = [
+    ...myBooks.map(b => `<div class="chapter-item"><span>📚 ${b.title}</span><span class="badge">${(b.chapters || []).length} гл.</span></div>`),
+    ...myArticles.map(a => `<div class="chapter-item"><span>📜 ${a.title}</span><button class="btn" onclick="openArticle('${a.id}')">Відкрити</button></div>`)
+  ].join('');
+
+  document.getElementById('profileWorksList').innerHTML = worksHtml || '<p class="subtitle">Ви ще не опублікували власних творів.</p>';
+}
+
+document.getElementById('profileNameForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await TaliesinAPI.updateProfileName(document.getElementById('profileNewName').value);
+    await refresh();
+    renderProfile();
+    alert('Ім’я барда успішно оновлено!');
+  } catch (err) {
+    alert(err.message);
+  }
+});
 
 // --- Створення статей і глав ---
 document.querySelectorAll('[data-editor]').forEach(tab => {
@@ -309,7 +391,7 @@ document.getElementById('articleForm').addEventListener('submit', async (e) => {
     });
     e.target.reset();
     await refresh();
-    document.querySelector('[data-nav="articles"]').click();
+    navigateTo('articles');
   } catch (err) {
     alert(err.message);
   }
@@ -328,7 +410,7 @@ document.getElementById('chapterForm').addEventListener('submit', async (e) => {
     });
     e.target.reset();
     await refresh();
-    document.querySelector('[data-nav="books"]').click();
+    navigateTo('books');
   } catch (err) {
     alert(err.message);
   }
@@ -367,6 +449,9 @@ async function refresh() {
   renderHeader();
   renderArticles();
   renderBooks();
+  if (!document.getElementById('view-profile').classList.contains('hidden')) {
+    renderProfile();
+  }
 }
 
 applyTheme(document.documentElement.getAttribute('data-theme') || 'day');
