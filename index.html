@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>tali_e_sin — Літературний портал барда</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Lora:ital,wght@0,400;0,600;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    (function () {
+      const saved = localStorage.getItem('taliesin_theme');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.setAttribute('data-theme', saved || (prefersDark ? 'night' : 'day'));
+    })();
+  </script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <a href="#" class="brand" data-nav="articles">
+        <span class="brand-icon" aria-hidden="true">🜂</span>
+        <span class="brand-name">tali_e_sin</span>
+      </a>
+
+      <nav class="main-nav" aria-label="Головна навігація">
+        <button class="nav-link active" data-nav="articles">Статті</button>
+        <button class="nav-link" data-nav="books">Книги</button>
+        <button class="nav-link" data-nav="write">Написати</button>
+        <button class="nav-link admin-only hidden" data-nav="admin">Адмін-панель</button>
+      </nav>
+
+      <div class="topbar-actions">
+        <button id="themeToggle" class="theme-btn" title="Перемкнути атмосферу День / Вогнище">
+          <span id="themeIcon">☀️</span>
+          <span id="themeLabel">День</span>
+        </button>
+
+        <button id="coinsBtn" class="coins-pill" title="Отримати монети за перегляд реклами">
+          <span>🪙</span>
+          <strong id="userCoins">0</strong>
+          <span class="plus-badge">+</span>
+        </button>
+
+        <div id="authArea" class="auth-area"></div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container main-content">
+    <!-- Секція статей -->
+    <section id="view-articles" class="view-section">
+      <div class="section-header">
+        <div>
+          <h1>Сувої та Сказання</h1>
+          <p class="subtitle">Есеї, переклади міфів та літературні нотатки спільноти</p>
+        </div>
+        <div class="filters">
+          <input type="search" id="articleSearch" class="input" placeholder="Пошук статей..." />
+          <select id="categoryFilter" class="input">
+            <option value="all">Усі категорії</option>
+            <option value="Міфологія">Міфологія</option>
+            <option value="Поезія">Поезія</option>
+            <option value="Аналіз">Аналіз</option>
+          </select>
+        </div>
+      </div>
+      <div id="articlesList" class="cards-grid"></div>
+    </section>
+
+    <!-- Секція книг -->
+    <section id="view-books" class="view-section hidden">
+      <div class="section-header">
+        <div>
+          <h1>Бібліотека Барда</h1>
+          <p class="subtitle">Перші глави відкриті для всіх; наступні розблоковуються за монети</p>
+        </div>
+      </div>
+      <div id="booksList" class="cards-grid"></div>
+    </section>
+
+    <!-- Секція створення контенту -->
+    <section id="view-write" class="view-section hidden">
+      <div class="editor-card">
+        <div class="tabs">
+          <button class="tab-btn active" data-editor="article">Нова стаття</button>
+          <button class="tab-btn" data-editor="book">Нова книга / глава</button>
+        </div>
+
+        <form id="articleForm" class="stack-form">
+          <h2>Опублікувати статтю</h2>
+          <input type="text" id="artTitle" class="input" placeholder="Заголовок статті" required />
+          <select id="artCategory" class="input">
+            <option value="Міфологія">Міфологія</option>
+            <option value="Поезія">Поезія</option>
+            <option value="Аналіз">Аналіз</option>
+          </select>
+          <textarea id="artContent" class="input textarea" rows="8" placeholder="Текст вашого твору..." required></textarea>
+          <button type="submit" class="btn btn-primary">Опублікувати статтю</button>
+        </form>
+
+        <form id="chapterForm" class="stack-form hidden">
+          <h2>Додати главу до книги</h2>
+          <select id="bookSelect" class="input"></select>
+          <input type="text" id="newBookTitle" class="input" placeholder="Або назва нової книги (якщо створюєте з нуля)" />
+          <input type="text" id="newBookDesc" class="input" placeholder="Короткий опис нової книги" />
+          <input type="text" id="chapTitle" class="input" placeholder="Назва глави (напр., Глава 3. Вогонь Авену)" required />
+          <input type="number" id="chapPrice" class="input" min="0" max="500" value="10" placeholder="Ціна в монетах (0 = безкоштовно)" required />
+          <textarea id="chapContent" class="input textarea" rows="8" placeholder="Текст глави..." required></textarea>
+          <button type="submit" class="btn btn-primary">Зберегти главу</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Адмін-панель -->
+    <section id="view-admin" class="view-section hidden">
+      <div class="section-header">
+        <div>
+          <h1>Панель Хранителя (Адмін)</h1>
+          <p class="subtitle">Модерація публікацій та керування економікою порталу</p>
+        </div>
+      </div>
+      <div id="adminStats" class="stats-row"></div>
+      <div id="adminContent" class="admin-panel-box"></div>
+    </section>
+  </main>
+
+  <!-- Модальне вікно для читання / авторизації / реклами -->
+  <div id="modalBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <button id="closeModal" class="modal-close" aria-label="Закрити">✕</button>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
