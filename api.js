@@ -221,5 +221,53 @@ window.TaliesinAPI = {
 
     const unlocked = [...(user.unlocked_chapters || []), newChap.id];
     await sbClient.from('profiles').update({ unlocked_chapters: unlocked }).eq('id', userId);
+  },
+
+  // --- Нові методи для Адмін-панелі ---
+  async adminAdjustUserCoins(targetUserId, delta) {
+    const numericDelta = Number(delta);
+    if (!numericDelta || Number.isNaN(numericDelta)) throw new Error('Вкажіть ненульову кількість монет');
+
+    const { data: target, error: fetchErr } = await sbClient
+      .from('profiles')
+      .select('coins, coin_history')
+      .eq('id', targetUserId)
+      .single();
+
+    if (fetchErr || !target) throw new Error('Користувача не знайдено');
+
+    const nextCoins = Math.max(0, (target.coins || 0) + numericDelta);
+    const label = numericDelta > 0 ? 'Дарунок Хранителя' : 'Стягнення Хранителя';
+    const nextHistory = [buildHistoryItem(label, numericDelta), ...(target.coin_history || [])].slice(0, 30);
+
+    const { error } = await sbClient.from('profiles').update({
+      coins: nextCoins,
+      coin_history: nextHistory
+    }).eq('id', targetUserId);
+
+    if (error) throw new Error(error.message);
+  },
+
+  async adminToggleUserRole(targetUserId, nextRole) {
+    const { error } = await sbClient.from('profiles').update({ role: nextRole }).eq('id', targetUserId);
+    if (error) throw new Error(error.message);
+  },
+
+  async adminDeleteComment(articleId, commentId) {
+    const { data: art } = await sbClient.from('articles').select('comments').eq('id', articleId).single();
+    if (!art) return;
+    const filtered = (art.comments || []).filter(c => c.id !== commentId);
+    await sbClient.from('articles').update({ comments: filtered }).eq('id', articleId);
+  },
+
+  async adminDeleteBook(bookId) {
+    await sbClient.from('books').delete().eq('id', bookId);
+  },
+
+  async adminDeleteChapter(bookId, chapterId) {
+    const { data: book } = await sbClient.from('books').select('chapters').eq('id', bookId).single();
+    if (!book) return;
+    const filtered = (book.chapters || []).filter(c => c.id !== chapterId);
+    await sbClient.from('books').update({ chapters: filtered }).eq('id', bookId);
   }
 };
