@@ -5,6 +5,16 @@ function getCurrentUser() {
   return state.users.find(u => u.id === state.currentUserId) || null;
 }
 
+function canEditArticle(art, user) {
+  if (!user || !art) return false;
+  return user.role === 'admin' || art.author === user.name;
+}
+
+function canEditBook(book, user) {
+  if (!user || !book) return false;
+  return user.role === 'admin' || book.author_id === user.id || book.author === user.name;
+}
+
 // --- Тема День / Вогнище ---
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -165,8 +175,9 @@ document.getElementById('coinsBtn').addEventListener('click', () => {
   }, 1000);
 });
 
-// --- Статті ---
+// --- Статті та їх редагування ---
 function renderArticles() {
+  const user = getCurrentUser();
   const query = document.getElementById('articleSearch').value.toLowerCase();
   const cat = document.getElementById('categoryFilter').value;
   const list = document.getElementById('articlesList');
@@ -191,9 +202,10 @@ function renderArticles() {
           <span>✍️ ${art.author}</span>
           <span>❤️ ${art.likes} · 💬 ${(art.comments || []).length}</span>
         </div>
-        <div style="display:flex; gap:0.5rem;">
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
           <button class="btn btn-primary" onclick="openArticle('${art.id}')">Читати</button>
           <button class="btn" onclick="likeArticle('${art.id}')">❤️ Вподобати</button>
+          ${canEditArticle(art, user) ? `<button class="btn" onclick="openEditArticleModal('${art.id}')">✏️ Редагувати</button>` : ''}
         </div>
       </div>
     </article>
@@ -203,11 +215,15 @@ function renderArticles() {
 window.openArticle = (id) => {
   const art = state.articles.find(a => a.id === id);
   if (!art) return;
+  const user = getCurrentUser();
   const comments = art.comments || [];
 
   openModal(`
-    <span class="badge">${art.category}</span>
-    <h2 style="margin-top:0.5rem;">${art.title}</h2>
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; padding-right:2rem;">
+      <span class="badge">${art.category}</span>
+      ${canEditArticle(art, user) ? `<button class="btn" onclick="openEditArticleModal('${art.id}')">✏️ Редагувати статтю</button>` : ''}
+    </div>
+    <h2 style="margin-top:0.6rem;">${art.title}</h2>
     <p class="subtitle" style="margin-bottom:1.2rem;">Автор: ${art.author} · ${art.date}</p>
     <div class="reading-text">${art.content}</div>
     <hr style="margin:1.5rem 0; border-color:var(--border);" />
@@ -233,6 +249,48 @@ window.openArticle = (id) => {
   };
 };
 
+window.openEditArticleModal = (id) => {
+  const art = state.articles.find(a => a.id === id);
+  if (!art) return;
+
+  openModal(`
+    <h2>Редагування статті</h2>
+    <p class="subtitle">Внесіть зміни до тексту або категорії вашого сувою</p>
+    <form id="editArticleForm" class="stack-form" style="margin-top:1rem;">
+      <input type="text" id="editArtTitle" class="input" required />
+      <select id="editArtCategory" class="input">
+        <option value="Міфологія">Міфологія</option>
+        <option value="Поезія">Поезія</option>
+        <option value="Аналіз">Аналіз</option>
+      </select>
+      <textarea id="editArtContent" class="input textarea" rows="10" required></textarea>
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+        <button type="submit" class="btn btn-primary">Зберегти зміни</button>
+        <button type="button" class="btn" onclick="openArticle('${art.id}')">Скасувати</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('editArtTitle').value = art.title;
+  document.getElementById('editArtCategory').value = art.category;
+  document.getElementById('editArtContent').value = art.content;
+
+  document.getElementById('editArticleForm').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await TaliesinAPI.updateArticle(art.id, {
+        title: document.getElementById('editArtTitle').value,
+        category: document.getElementById('editArtCategory').value,
+        content: document.getElementById('editArtContent').value
+      });
+      await refresh();
+      openArticle(art.id);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+};
+
 window.likeArticle = async (id) => {
   await TaliesinAPI.toggleLike(id);
   await refresh();
@@ -241,36 +299,45 @@ window.likeArticle = async (id) => {
 document.getElementById('articleSearch').addEventListener('input', renderArticles);
 document.getElementById('categoryFilter').addEventListener('change', renderArticles);
 
-// --- Книги та платні глави ---
+// --- Книги, глави та редактор автора ---
 function renderBooks() {
   const user = getCurrentUser();
   const unlocked = user ? user.unlockedChapters : [];
   const list = document.getElementById('booksList');
 
-  list.innerHTML = state.books.map(book => `
-    <div class="card">
-      <div>
-        <span class="badge">Книга</span>
-        <h3 style="margin-top:0.5rem;">${book.title}</h3>
-        <p class="subtitle">Автор: ${book.author}</p>
-        <p>${book.description}</p>
+  list.innerHTML = state.books.map(book => {
+    const isAuthor = canEditBook(book, user);
+    return `
+      <div class="card">
+        <div>
+          <div class="meta-row">
+            <span class="badge">Книга</span>
+            ${isAuthor ? `<button class="btn" style="padding:0.25rem 0.7rem; font-size:0.8rem;" onclick="openBookEditorModal('${book.id}')">✏️ Керувати книгою</button>` : ''}
+          </div>
+          <h3 style="margin-top:0.5rem;">${book.title}</h3>
+          <p class="subtitle">Автор: ${book.author}</p>
+          <p>${book.description}</p>
+        </div>
+        <div>
+          <strong>Глави:</strong>
+          ${(book.chapters || []).map(ch => {
+            const isOpen = ch.price === 0 || unlocked.includes(ch.id) || isAuthor;
+            return `
+              <div class="chapter-item">
+                <span>${isOpen ? '📖' : '🔒'} ${ch.title}</span>
+                <div style="display:flex; gap:0.35rem;">
+                  <button class="btn ${isOpen ? '' : 'btn-primary'}" onclick="readChapter('${book.id}', '${ch.id}')">
+                    ${isOpen ? 'Читати' : `${ch.price} 🪙`}
+                  </button>
+                  ${isAuthor ? `<button class="btn" title="Редагувати главу" onclick="openEditChapterModal('${book.id}', '${ch.id}')">✏️</button>` : ''}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
       </div>
-      <div>
-        <strong>Глави:</strong>
-        ${(book.chapters || []).map(ch => {
-          const isOpen = ch.price === 0 || unlocked.includes(ch.id);
-          return `
-            <div class="chapter-item">
-              <span>${isOpen ? '📖' : '🔒'} ${ch.title}</span>
-              <button class="btn ${isOpen ? '' : 'btn-primary'}" onclick="readChapter('${book.id}', '${ch.id}')">
-                ${isOpen ? 'Читати' : `${ch.price} 🪙`}
-              </button>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 window.readChapter = async (bookId, chapterId) => {
@@ -278,19 +345,111 @@ window.readChapter = async (bookId, chapterId) => {
   const chap = book?.chapters.find(c => c.id === chapterId);
   if (!chap) return;
 
+  const user = getCurrentUser();
+  const isAuthor = canEditBook(book, user);
+
   try {
-    if (chap.price > 0) {
+    if (chap.price > 0 && !isAuthor) {
       await TaliesinAPI.unlockChapter(chap.id, chap.price, chap.title, book.author_id);
       await refresh();
     }
     openModal(`
-      <span class="badge">${book.title}</span>
-      <h2 style="margin-top:0.5rem;">${chap.title}</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; padding-right:2rem;">
+        <span class="badge">${book.title}</span>
+        ${isAuthor ? `<button class="btn" onclick="openEditChapterModal('${book.id}', '${chap.id}')">✏️ Редагувати главу</button>` : ''}
+      </div>
+      <h2 style="margin-top:0.6rem;">${chap.title}</h2>
       <div class="reading-text" style="margin-top:1rem;">${chap.content}</div>
     `);
   } catch (err) {
     alert(err.message);
   }
+};
+
+window.openBookEditorModal = (bookId) => {
+  const book = state.books.find(b => b.id === bookId);
+  if (!book) return;
+
+  openModal(`
+    <h2>Керування книгою</h2>
+    <form id="editBookInfoForm" class="stack-form" style="margin-top:0.8rem;">
+      <label class="subtitle">Назва книги</label>
+      <input type="text" id="editBookTitleInput" class="input" required />
+      <label class="subtitle">Опис книги</label>
+      <textarea id="editBookDescInput" class="input textarea" rows="3"></textarea>
+      <button type="submit" class="btn btn-primary">Зберегти опис книги</button>
+    </form>
+
+    <hr style="margin:1.4rem 0; border-color:var(--border);" />
+    <h3>Глави книги (${(book.chapters || []).length})</h3>
+    <div>
+      ${(book.chapters || []).map(ch => `
+        <div class="chapter-item">
+          <span><strong>${ch.title}</strong> <small class="subtitle">(${ch.price} 🪙)</small></span>
+          <button class="btn" onclick="openEditChapterModal('${book.id}', '${ch.id}')">✏️ Редагувати главу</button>
+        </div>
+      `).join('') || '<p class="subtitle">У цій книзі ще немає глав.</p>'}
+    </div>
+  `);
+
+  document.getElementById('editBookTitleInput').value = book.title;
+  document.getElementById('editBookDescInput').value = book.description || '';
+
+  document.getElementById('editBookInfoForm').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await TaliesinAPI.updateBookInfo(book.id, {
+        title: document.getElementById('editBookTitleInput').value,
+        description: document.getElementById('editBookDescInput').value
+      });
+      await refresh();
+      openBookEditorModal(book.id);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+};
+
+window.openEditChapterModal = (bookId, chapterId) => {
+  const book = state.books.find(b => b.id === bookId);
+  const chap = book?.chapters.find(c => c.id === chapterId);
+  if (!chap) return;
+
+  openModal(`
+    <span class="badge">${book.title}</span>
+    <h2 style="margin-top:0.5rem;">Редагування глави</h2>
+    <form id="editChapterForm" class="stack-form" style="margin-top:1rem;">
+      <label class="subtitle">Назва глави</label>
+      <input type="text" id="editChapTitle" class="input" required />
+      <label class="subtitle">Ціна в монетах (0 = безкоштовно)</label>
+      <input type="number" id="editChapPrice" class="input" min="0" max="500" required />
+      <label class="subtitle">Текст глави</label>
+      <textarea id="editChapContent" class="input textarea" rows="10" required></textarea>
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+        <button type="submit" class="btn btn-primary">Зберегти главу</button>
+        <button type="button" class="btn" onclick="openBookEditorModal('${book.id}')">До списку глав</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('editChapTitle').value = chap.title;
+  document.getElementById('editChapPrice').value = chap.price;
+  document.getElementById('editChapContent').value = chap.content;
+
+  document.getElementById('editChapterForm').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await TaliesinAPI.updateChapter(book.id, chap.id, {
+        title: document.getElementById('editChapTitle').value,
+        price: document.getElementById('editChapPrice').value,
+        content: document.getElementById('editChapContent').value
+      });
+      await refresh();
+      openBookEditorModal(book.id);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
 };
 
 // --- Особистий кабінет (Профіль) ---
@@ -346,8 +505,21 @@ function renderProfile() {
     : '<p class="subtitle">Ви ще не розблокували жодної платної глави.</p>';
 
   const worksHtml = [
-    ...myBooks.map(b => `<div class="chapter-item"><span>📚 ${b.title}</span><span class="badge">${(b.chapters || []).length} гл.</span></div>`),
-    ...myArticles.map(a => `<div class="chapter-item"><span>📜 ${a.title}</span><button class="btn" onclick="openArticle('${a.id}')">Відкрити</button></div>`)
+    ...myBooks.map(b => `
+      <div class="chapter-item">
+        <span>📚 ${b.title} <small class="subtitle">(${(b.chapters || []).length} гл.)</small></span>
+        <button class="btn" onclick="openBookEditorModal('${b.id}')">✏️ Керувати</button>
+      </div>
+    `),
+    ...myArticles.map(a => `
+      <div class="chapter-item">
+        <span>📜 ${a.title}</span>
+        <div style="display:flex; gap:0.35rem;">
+          <button class="btn" onclick="openArticle('${a.id}')">Читати</button>
+          <button class="btn" onclick="openEditArticleModal('${a.id}')">✏️</button>
+        </div>
+      </div>
+    `)
   ].join('');
 
   document.getElementById('profileWorksList').innerHTML = worksHtml || '<p class="subtitle">Ви ще не опублікували власних творів.</p>';
@@ -376,9 +548,11 @@ document.querySelectorAll('[data-editor]').forEach(tab => {
 });
 
 function populateBookSelect() {
+  const user = getCurrentUser();
   const select = document.getElementById('bookSelect');
+  const editableBooks = state.books.filter(b => canEditBook(b, user));
   select.innerHTML = `<option value="">-- Створити нову книгу --</option>` +
-    state.books.map(b => `<option value="${b.id}">${b.title}</option>`).join('');
+    editableBooks.map(b => `<option value="${b.id}">${b.title}</option>`).join('');
 }
 
 document.getElementById('articleForm').addEventListener('submit', async (e) => {
