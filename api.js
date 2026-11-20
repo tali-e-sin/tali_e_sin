@@ -122,6 +122,19 @@ window.TaliesinAPI = {
     return data;
   },
 
+  async updateArticle(articleId, { title, category, content }) {
+    const userId = localStorage.getItem(SESSION_KEY);
+    if (!userId) throw new Error('Потрібна авторизація');
+
+    const { error } = await sbClient.from('articles').update({
+      title: title.trim(),
+      category,
+      content: content.trim()
+    }).eq('id', articleId);
+
+    if (error) throw new Error(error.message);
+  },
+
   async toggleLike(articleId) {
     const { data: art } = await sbClient.from('articles').select('likes').eq('id', articleId).single();
     if (!art) return;
@@ -223,7 +236,36 @@ window.TaliesinAPI = {
     await sbClient.from('profiles').update({ unlocked_chapters: unlocked }).eq('id', userId);
   },
 
-  // --- Нові методи для Адмін-панелі ---
+  async updateBookInfo(bookId, { title, description }) {
+    const userId = localStorage.getItem(SESSION_KEY);
+    if (!userId) throw new Error('Потрібна авторизація');
+
+    const { error } = await sbClient.from('books').update({
+      title: title.trim(),
+      description: description.trim()
+    }).eq('id', bookId);
+
+    if (error) throw new Error(error.message);
+  },
+
+  async updateChapter(bookId, chapterId, { title, price, content }) {
+    const userId = localStorage.getItem(SESSION_KEY);
+    if (!userId) throw new Error('Потрібна авторизація');
+
+    const { data: book, error: fetchErr } = await sbClient.from('books').select('chapters').eq('id', bookId).single();
+    if (fetchErr || !book) throw new Error('Книгу не знайдено');
+
+    const updatedChapters = (book.chapters || []).map(ch =>
+      ch.id === chapterId
+        ? { ...ch, title: title.trim(), price: Math.max(0, Number(price) || 0), content: content.trim() }
+        : ch
+    );
+
+    const { error } = await sbClient.from('books').update({ chapters: updatedChapters }).eq('id', bookId);
+    if (error) throw new Error(error.message);
+  },
+
+  // --- Методи для Адмін-панелі ---
   async adminAdjustUserCoins(targetUserId, delta) {
     const numericDelta = Number(delta);
     if (!numericDelta || Number.isNaN(numericDelta)) throw new Error('Вкажіть ненульову кількість монет');
