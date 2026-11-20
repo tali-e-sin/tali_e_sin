@@ -4,6 +4,15 @@ const SUPABASE_ANON_KEY = 'sb_publishable_sFE27f6RWBwS5rpNaOZszw_J6Nv7r_w';
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const SESSION_KEY = 'taliesin_current_user_id';
 
+function buildHistoryItem(label, delta) {
+  return {
+    id: 'tx_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+    label,
+    delta,
+    date: new Date().toLocaleDateString('uk-UA')
+  };
+}
+
 window.TaliesinAPI = {
   async getState() {
     const [usersRes, articlesRes, booksRes] = await Promise.all([
@@ -14,7 +23,8 @@ window.TaliesinAPI = {
 
     const users = (usersRes.data || []).map(u => ({
       ...u,
-      unlockedChapters: u.unlocked_chapters || []
+      unlockedChapters: u.unlocked_chapters || [],
+      coinHistory: u.coin_history || []
     }));
 
     return {
@@ -40,7 +50,8 @@ window.TaliesinAPI = {
         email: cleanEmail,
         role,
         coins: 30,
-        unlocked_chapters: []
+        unlocked_chapters: [],
+        coin_history: [buildHistoryItem('Вітальний дар гільдії', +30)]
       };
       const { data, error } = await supabase.from('profiles').insert(newUser).select().single();
       if (error) throw new Error(error.message);
@@ -48,7 +59,11 @@ window.TaliesinAPI = {
     }
 
     localStorage.setItem(SESSION_KEY, user.id);
-    return { ...user, unlockedChapters: user.unlocked_chapters || [] };
+    return {
+      ...user,
+      unlockedChapters: user.unlocked_chapters || [],
+      coinHistory: user.coin_history || []
+    };
   },
 
   async switchDemoRole(role) {
@@ -61,14 +76,29 @@ window.TaliesinAPI = {
     localStorage.removeItem(SESSION_KEY);
   },
 
+  async updateProfileName(newName) {
+    const userId = localStorage.getItem(SESSION_KEY);
+    if (!userId) throw new Error('Потрібна авторизація');
+    const cleanName = newName.trim();
+    if (!cleanName) throw new Error('Введіть коректне ім’я');
+
+    const { error } = await supabase.from('profiles').update({ name: cleanName }).eq('id', userId);
+    if (error) throw new Error(error.message);
+  },
+
   async addCoins(amount) {
     const userId = localStorage.getItem(SESSION_KEY);
     if (!userId) throw new Error('Потрібна авторизація');
 
-    const { data: user } = await supabase.from('profiles').select('coins').eq('id', userId).single();
+    const { data: user } = await supabase.from('profiles').select('coins, coin_history').eq('id', userId).single();
     const updatedCoins = (user?.coins || 0) + amount;
+    const updatedHistory = [buildHistoryItem('Перегляд послання меценатів', +amount), ...(user?.coin_history || [])].slice(0, 30);
 
-    const { error } = await supabase.from('profiles').update({ coins: updatedCoins }).eq('id', userId);
+    const { error } = await supabase.from('profiles').update({
+      coins: updatedCoins,
+      coin_history: updatedHistory
+    }).eq('id', userId);
+
     if (error) throw new Error(error.message);
     return updatedCoins;
   },
@@ -115,7 +145,7 @@ window.TaliesinAPI = {
     await supabase.from('articles').delete().eq('id', articleId);
   },
 
-  async unlockChapter(chapterId, price) {
+  async unlockChapter(chapterId, price, chapterTitle = 'Глава книги', authorId = null) {
     const userId = localStorage.getItem(SESSION_KEY);
     if (!userId) throw new Error('Увійдіть у профіль для читання платних глав');
 
@@ -125,12 +155,35 @@ window.TaliesinAPI = {
     if (unlocked.includes(chapterId)) return true;
     if (user.coins < price) throw new Error('Недостатньо монет! Перегляньте рекламу, щоб поповнити баланс.');
 
+    const nextHistory = [
+      buildHistoryItem(`Розблоковано: «${chapterTitle}»`, -price),
+      ...(user.coin_history || [])
+    ].slice(0, 30);
+
     const { error } = await supabase.from('profiles').update({
       coins: user.coins - price,
-      unlocked_chapters: [...unlocked, chapterId]
+      unlocked_chapters: [...unlocked, chapterId],
+      coin_history: nextHistory
     }).eq('id', userId);
 
     if (error) throw new Error(error.message);
+
+    // Нарахування авторського роялті (80% від вартості глави), якщо покупець не сам автор
+    if (authorId && authorId !== userId) {
+      const royalty = Math.max(1, Math.ceil(price * 0.8));
+      const { data: author } = await supabase.from('profiles').select('coins, coin_history').eq('id', authorId).maybeSingle();
+      if (author) {
+        const authorHistory = [
+          buildHistoryItem(`Роялті за главу «${chapterTitle}»`, +royalty),
+          ...(author.coin_history || [])
+        ].slice(0, 30);
+        await supabase.from('profiles').update({
+          coins: (author.coins || 0) + royalty,
+          coin_history: authorHistory
+        }).eq('id', authorId);
+      }
+    }
+
     return true;
   },
 
@@ -152,6 +205,7 @@ window.TaliesinAPI = {
       const { data: createdBook, error } = await supabase.from('books').insert({
         title: newBookTitle.trim(),
         author: user.name,
+        author_id: userId,
         description: newBookDesc.trim() || 'Авторська книга порталу tali_e_sin',
         chapters: [newChap]
       }).select().single();
@@ -166,7 +220,6 @@ window.TaliesinAPI = {
       throw new Error('Оберіть книгу або введіть назву нової');
     }
 
-    // Автоматично відкриваємо автору його власну главу
     const unlocked = [...(user.unlocked_chapters || []), newChap.id];
     await supabase.from('profiles').update({ unlocked_chapters: unlocked }).eq('id', userId);
   }
