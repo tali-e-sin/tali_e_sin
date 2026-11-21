@@ -335,6 +335,7 @@ document.getElementById('coinsBtn').addEventListener('click', () => {
 // --- Статті та їх редагування ---
 function renderArticles() {
   const user = getCurrentUser();
+  const favArticles = user ? (user.favoriteArticles || []) : [];
   const query = document.getElementById('articleSearch').value.toLowerCase();
   const cat = document.getElementById('categoryFilter').value;
   const list = document.getElementById('articlesList');
@@ -348,6 +349,7 @@ function renderArticles() {
     const savedRatio = Number(localStorage.getItem(`taliesin_scroll_art_${art.id}`));
     const hasBookmark = savedRatio > 0.03 && savedRatio < 0.95;
     const pct = Math.round(savedRatio * 100);
+    const isFav = favArticles.includes(art.id);
 
     return `
       <article class="card" style="${hasBookmark ? 'border-color: var(--accent);' : ''}">
@@ -369,6 +371,9 @@ function renderArticles() {
             <button class="btn btn-primary" onclick="openArticle('${art.id}')">
               ${hasBookmark ? '▶ Продовжити' : 'Читати'}
             </button>
+            <button class="btn ${isFav ? 'btn-primary' : ''}" onclick="toggleFavoriteArticle('${art.id}')">
+              ${isFav ? '★ В обраному' : '🔖 В обране'}
+            </button>
             <button class="btn" onclick="likeArticle('${art.id}')">❤️ Вподобати</button>
             ${canEditArticle(art, user) ? `<button class="btn" onclick="openEditArticleModal('${art.id}')">✏️ Редагувати</button>` : ''}
           </div>
@@ -378,12 +383,24 @@ function renderArticles() {
   }).join('');
 }
 
+window.toggleFavoriteArticle = async (articleId) => {
+  const user = getCurrentUser();
+  if (!user) return openAuthModal();
+  try {
+    await TaliesinAPI.toggleFavoriteArticle(articleId);
+    await refresh();
+  } catch (err) {
+    alert(err.message);
+  }
+};
+
 window.openArticle = (id) => {
   const art = state.articles.find(a => a.id === id);
   if (!art) return;
   const user = getCurrentUser();
   const comments = art.comments || [];
   const minutes = estimateReadingMinutes(art.content);
+  const isFav = (user?.favoriteArticles || []).includes(art.id);
 
   openModal(`
     <div class="reading-progress-wrap"><div id="readingProgressBar" class="reading-progress-bar"></div></div>
@@ -409,6 +426,17 @@ window.openArticle = (id) => {
     <div>
       ${comments.map(c => `<div class="comment-box"><strong>${c.author}:</strong> ${c.text}</div>`).join('') || '<p class="subtitle">Поки немає коментарів.</p>'}
     </div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; padding-right:2rem;">
+      <span class="badge">${art.category}</span>
+      <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+        <button class="btn ${isFav ? 'btn-primary' : ''}" onclick="toggleFavoriteArticle('${art.id}').then(() => openArticle('${art.id}'))">
+          ${isFav ? '★ В обраному' : '🔖 В обране'}
+        </button>
+        ${canEditArticle(art, user) ? `<button class="btn" onclick="openEditArticleModal('${art.id}')">✏️ Редагувати статтю</button>` : ''}
+      </div>
+    </div>
+    
     <form id="commentForm" class="stack-form" style="margin-top:1rem;">
       <input type="text" id="commentInput" class="input" placeholder="Написати коментар..." required />
       <button type="submit" class="btn btn-primary">Надіслати</button>
@@ -720,6 +748,24 @@ function renderProfile() {
 
   const favBooks = state.books.filter(b => (user.favoriteBooks || []).includes(b.id));
   const favContainer = document.getElementById('profileFavoritesList');
+  const favArticles = state.articles.filter(a => (user.favoriteArticles || []).includes(a.id));
+  const favArtContainer = document.getElementById('profileFavArticlesList');
+  if (favArtContainer) {
+    favArtContainer.innerHTML = favArticles.length
+      ? favArticles.map(a => `
+          <div class="chapter-item" style="flex-wrap:wrap;">
+            <div>
+              <div style="font-size:0.95rem; font-weight:600;">★ ${a.title}</div>
+              <small class="subtitle">${a.category} · Автор: ${a.author}</small>
+            </div>
+            <div style="display:flex; gap:0.35rem;">
+              <button class="btn btn-primary" onclick="openArticle('${a.id}')">Читати</button>
+              <button class="btn" onclick="toggleFavoriteArticle('${a.id}')" title="Прибрати з обраного">✕</button>
+            </div>
+          </div>
+        `).join('')
+      : '<p class="subtitle">У вас поки немає збережених статей.</p>';
+  }
   if (favContainer) {
     favContainer.innerHTML = favBooks.length
       ? favBooks.map(b => {
