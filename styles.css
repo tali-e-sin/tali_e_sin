@@ -87,6 +87,7 @@ h1, h2, h3, .brand-name {
 
 .main-nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.4rem;
 }
 
