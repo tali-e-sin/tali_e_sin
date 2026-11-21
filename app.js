@@ -48,6 +48,13 @@ function navigateTo(target) {
   if (target === 'admin') renderAdmin();
 }
 
+document.querySelectorAll('[data-nav]').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    navigateTo(btn.dataset.nav);
+  });
+});
+
 // --- Модальне вікно ---
 const modalBackdrop = document.getElementById('modalBackdrop');
 const modalBody = document.getElementById('modalBody');
@@ -483,7 +490,7 @@ function renderProfile() {
   const user = getCurrentUser();
   if (!user) return navigateTo('articles');
 
-  const myArticles = state.articles.filter(a => a.author === user.name);
+  const myArticles = state.articles.filter(a => a.author_id === user.id || a.author === user.name);
   const myBooks = state.books.filter(b => b.author_id === user.id || b.author === user.name);
 
   const unlockedItems = [];
@@ -616,11 +623,12 @@ document.getElementById('chapterForm').addEventListener('submit', async (e) => {
   }
 });
 
-// --- Розширена Адмін-панель ---
-function renderAdmin() {
+// --- Розширена Адмін-панель + Журнал безпеки ---
+async function renderAdmin() {
   const currentUser = getCurrentUser();
   if (!currentUser || currentUser.role !== 'admin') return navigateTo('articles');
 
+  const logs = await TaliesinAPI.getSecurityLogs();
   const totalCoins = state.users.reduce((sum, u) => sum + (u.coins || 0), 0);
   const totalComments = state.articles.reduce((sum, a) => sum + (a.comments || []).length, 0);
 
@@ -630,6 +638,18 @@ function renderAdmin() {
     <div class="stat-box"><strong>${state.articles.length}</strong>Статей (${totalComments} ком.)</div>
     <div class="stat-box"><strong>${state.books.length}</strong>Книг у бібліотеці</div>
   `;
+
+  const logsHtml = logs.length
+    ? logs.map(l => `
+        <div class="chapter-item" style="border-left: 3px solid var(--danger); padding-left: 0.7rem;">
+          <div>
+            <strong>🚨 ${l.action}</strong> — <span class="subtitle">${l.user_email}</span>
+            <div style="font-size:0.85rem;">${l.details}</div>
+          </div>
+          <small class="subtitle">${new Date(l.created_at).toLocaleString('uk-UA')}</small>
+        </div>
+      `).join('')
+    : '<p class="subtitle">Підозрілої активності не зафіксовано.</p>';
 
   const usersHtml = state.users.map(u => {
     const nextRole = u.role === 'admin' ? 'user' : 'admin';
@@ -694,6 +714,13 @@ function renderAdmin() {
     : '<p class="subtitle">Статей поки немає.</p>';
 
   document.getElementById('adminContent').innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+      <h3>🛡️ Журнал безпеки (${logs.length})</h3>
+      ${logs.length ? `<button class="btn" onclick="adminClearLogs()">Очистити журнал</button>` : ''}
+    </div>
+    <div style="margin-bottom:1.5rem;">${logsHtml}</div>
+
+    <hr style="margin:1.6rem 0; border-color:var(--border);" />
     <h3>👥 Користувачі та скарбниця</h3>
     ${usersHtml}
 
@@ -706,6 +733,11 @@ function renderAdmin() {
     ${articlesHtml}
   `;
 }
+
+window.adminClearLogs = async () => {
+  await TaliesinAPI.clearSecurityLogs();
+  await renderAdmin();
+};
 
 window.adminCoins = async (userId, delta) => {
   try {
@@ -723,8 +755,12 @@ window.adminCustomCoins = async (userId, userName) => {
 };
 
 window.adminRole = async (userId, nextRole) => {
-  await TaliesinAPI.adminToggleUserRole(userId, nextRole);
-  await refresh();
+  try {
+    await TaliesinAPI.adminToggleUserRole(userId, nextRole);
+    await refresh();
+  } catch (err) {
+    alert(err.message);
+  }
 };
 
 window.adminDeleteBook = async (bookId) => {
@@ -765,7 +801,7 @@ async function refresh() {
     renderProfile();
   }
   if (!document.getElementById('view-admin').classList.contains('hidden')) {
-    renderAdmin();
+    await renderAdmin();
   }
 }
 
