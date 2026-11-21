@@ -1320,16 +1320,6 @@ function renderProfile() {
   const myArticles = state.articles.filter(a => a.author_id === user.id || a.author === user.name);
   const myBooks = state.books.filter(b => b.author_id === user.id || b.author === user.name);
 
-  const streakInfo = getStreakStatus(user);
-  document.getElementById('profileSummary').innerHTML = `
-    <div class="stat-box"><strong>${user.coins} 🪙</strong>Поточний баланс</div>
-    <div class="stat-box" style="cursor:pointer;" onclick="openDailyStreakModal()" title="Відкрити ритуал Вогнища">
-      <strong>${streakInfo.activeStreak} 🔥</strong>Серія днів (${streakInfo.claimedToday ? 'забрано' : `+${streakInfo.nextReward} 🪙`})
-    </div>
-    <div class="stat-box"><strong>${unlockedItems.length}</strong>Куплених / відкритих глав</div>
-    <div class="stat-box"><strong>${myArticles.length + myBooks.length}</strong>Створених творів</div>
-  `;
-
   const unlockedItems = [];
   state.books.forEach(book => {
     (book.chapters || []).forEach(ch => {
