@@ -64,12 +64,121 @@ function canEditBook(book, user) {
 }
 
 function getBookRatingStats(book) {
-  const reviews = Array.isArray(book?.reviews) ? book.reviews : [];
-  if (!reviews.length) return { avg: 'Без оцінок', count: 0, hasRatings: false };
-  const sum = reviews.reduce((acc, r) => acc + (Number(r.rating) || 0), 0);
-  const avg = (sum / reviews.length).toFixed(1);
-  return { avg, count: reviews.length, hasRatings: true };
+  const allItems = Array.isArray(book?.reviews) ? book.reviews : [];
+  const mainReviews = allItems.filter(r => !r.parent_id && Number(r.rating) > 0);
+  if (!mainReviews.length) return { avg: 'Без оцінок', count: allItems.length, hasRatings: false };
+  const sum = mainReviews.reduce((acc, r) => acc + (Number(r.rating) || 0), 0);
+  const avg = (sum / mainReviews.length).toFixed(1);
+  return { avg, count: allItems.length, hasRatings: true };
 }
+
+function renderCommentThread(items, { targetType, targetId, showStars = false }) {
+  const user = getCurrentUser();
+  const list = Array.isArray(items) ? items : [];
+  const byParent = {};
+
+  list.forEach(item => {
+    const pid = item.parent_id || 'root';
+    if (!byParent[pid]) byParent[pid] = [];
+    byParent[pid].push(item);
+  });
+
+  const renderStars = (count) => '★'.repeat(count) + '☆'.repeat(5 - count);
+
+  const renderNode = (node, depth = 0) => {
+    const likedBy = Array.isArray(node.liked_by) ? node.liked_by : [];
+    const isLiked = user ? likedBy.includes(user.id) : false;
+    const children = byParent[node.id] || [];
+    const safeAuthor = escapeHtml(node.author || 'Читач');
+
+    return `
+      <div class="comment-box" style="margin-top:0.55rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.25rem;">
+          <div>
+            <strong>${renderAuthorLink(node.author, node.user_id || '')}</strong>
+            ${node.date ? `<small class="subtitle" style="margin-left:0.4rem;">${node.date}</small>` : ''}
+          </div>
+          ${showStars && !node.parent_id && Number(node.rating) > 0
+            ? `<span style="color:var(--accent); letter-spacing:1px;">${renderStars(Number(node.rating))}</span>`
+            : ''}
+        </div>
+
+        <div style="white-space:pre-line;">${escapeHtml(node.text)}</div>
+
+        <div class="comment-actions">
+          <button type="button" class="icon-stat-btn ${isLiked ? 'active' : ''}" onclick="handleCommentLike('${targetType}', '${targetId}', '${node.id}')" title="Вподобати">
+            ${isLiked ? '❤️' : '🤍'} <span>${likedBy.length}</span>
+          </button>
+          <button type="button" class="icon-stat-btn" onclick="toggleReplyForm('${node.id}')" title="Відповісти">
+            ↩ Відповісти
+          </button>
+        </div>
+
+        <form id="reply-form-${node.id}" class="reply-inline-form hidden" onsubmit="submitCommentReply(event, '${targetType}', '${targetId}', '${node.id}')">
+          <input type="text" class="input" placeholder="Відповідь для ${safeAuthor}..." maxlength="500" required />
+          <button type="submit" class="btn btn-primary" style="padding:0.4rem 0.85rem;">Надіслати</button>
+          <button type="button" class="btn" style="padding:0.4rem 0.7rem;" onclick="toggleReplyForm('${node.id}')">✕</button>
+        </form>
+
+        ${children.length && depth < 5
+          ? `<div class="comment-replies">${children.map(ch => renderNode(ch, depth + 1)).join('')}</div>`
+          : ''}
+      </div>
+    `;
+  };
+
+  const roots = byParent['root'] || [];
+  return roots.length ? roots.map(r => renderNode(r, 0)).join('') : '';
+}
+
+window.toggleReplyForm = (commentId) => {
+  if (!getCurrentUser()) return openAuthModal();
+  const form = document.getElementById(`reply-form-${commentId}`);
+  if (!form) return;
+  form.classList.toggle('hidden');
+  if (!form.classList.contains('hidden')) {
+    form.querySelector('input')?.focus();
+  }
+};
+
+window.handleCommentLike = async (targetType, targetId, commentId) => {
+  if (!getCurrentUser()) return openAuthModal();
+  try {
+    if (targetType === 'article') {
+      await TaliesinAPI.toggleCommentLike(targetId, commentId);
+      await refresh();
+      openArticle(targetId, true);
+    } else {
+      await TaliesinAPI.toggleBookReviewLike(targetId, commentId);
+      await refresh();
+      openBookReviewsModal(targetId);
+    }
+  } catch (err) {
+    alert(err.message);
+  }
+};
+
+window.submitCommentReply = async (e, targetType, targetId, parentId) => {
+  e.preventDefault();
+  if (!getCurrentUser()) return openAuthModal();
+  const input = e.target.querySelector('input');
+  const text = input?.value?.trim();
+  if (!text) return;
+
+  try {
+    if (targetType === 'article') {
+      await TaliesinAPI.addComment(targetId, text, parentId);
+      await refresh();
+      openArticle(targetId, true);
+    } else {
+      await TaliesinAPI.addBookReviewReply(targetId, parentId, text);
+      await refresh();
+      openBookReviewsModal(targetId);
+    }
+  } catch (err) {
+    alert(err.message);
+  }
+};
 
 function renderAuthorLink(authorName, authorId = '') {
   const safeName = escapeHtml(authorName || 'Невідомий бард');
@@ -543,13 +652,8 @@ window.openArticle = (id, scrollToComments = false) => {
     <hr id="articleCommentsSection" style="margin:1.5rem 0; border-color:var(--border);" />
     <h3>Коментарі (${comments.length})</h3>
     <div>
-      ${comments.map(c => `
-        <div class="comment-box">
-          <strong>${renderAuthorLink(c.author, c.user_id || '')}:</strong> ${escapeHtml(c.text)}
-          ${c.date ? `<small class="subtitle" style="margin-left:0.4rem;">(${c.date})</small>` : ''}
-        </div>
-      `).join('') || '<p class="subtitle">Поки немає коментарів.</p>'}
-    </div>
+  ${renderCommentThread(comments, { targetType: 'article', targetId: id }) || '<p class="subtitle">Поки немає коментарів.</p>'}
+</div>
     
     <form id="commentForm" class="stack-form" style="margin-top:1rem;">
       <input type="text" id="commentInput" class="input" placeholder="Написати коментар..." required />
@@ -700,8 +804,8 @@ window.openBookReviewsModal = (bookId) => {
   const user = getCurrentUser();
   const reviews = Array.isArray(book.reviews) ? book.reviews : [];
   const ratingInfo = getBookRatingStats(book);
-  const myExisting = user ? reviews.find(r => r.user_id === user.id) : null;
-
+  const myExisting = user ? reviews.find(r => r.user_id === user.id && !r.parent_id) : null;
+  
   const renderStars = (count) => '★'.repeat(count) + '☆'.repeat(5 - count);
   const badgeText = ratingInfo.hasRatings ? `⭐ ${ratingInfo.avg} (${ratingInfo.count})` : '☆ Без оцінок';
 
@@ -731,18 +835,8 @@ window.openBookReviewsModal = (bookId) => {
 
     <h3>Відгуки читачів (${reviews.length})</h3>
     <div>
-      ${reviews.length
-        ? reviews.map(r => `
-            <div class="comment-box" style="margin-bottom:0.7rem;">
-              <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-bottom:0.3rem;">
-                <strong>${renderAuthorLink(r.author, r.user_id)}</strong>
-                <span style="color:var(--accent); letter-spacing:1px;">${renderStars(Number(r.rating) || 5)} <small class="subtitle">· ${r.date || ''}</small></span>
-              </div>
-              <div>${escapeHtml(r.text)}</div>
-            </div>
-          `).join('')
-        : '<p class="subtitle">Поки немає жодного відгуку. Станьте першим, хто оцінить цю книгу!</p>'}
-    </div>
+  ${renderCommentThread(reviews, { targetType: 'book', targetId: bookId, showStars: true }) || '<p class="subtitle">Поки немає жодного відгуку. Станьте першим, хто оцінить цю книгу!</p>'}
+</div>
   `);
 
   if (myExisting) {
