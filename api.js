@@ -236,15 +236,6 @@ window.TaliesinAPI = {
     if (error) throw new Error(error.message);
   },
 
-    const [{ data: profile }, { data: art }] = await Promise.all([
-      sbClient.from('profiles').select('name').eq('id', user.id).single(),
-      sbClient.from('articles').select('comments').eq('id', articleId).single()
-    ]);
-
-    const nextComments = [...(art.comments || []), { id: 'cm_' + Date.now(), author: profile.name, text }];
-    await sbClient.from('articles').update({ comments: nextComments }).eq('id', articleId);
-  },
-
   async deleteArticle(articleId) {
     const { error } = await sbClient.from('articles').delete().eq('id', articleId);
     if (error) throw new Error(error.message);
