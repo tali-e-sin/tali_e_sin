@@ -1,5 +1,36 @@
 let state = null;
 
+let readerFontSize = Number(localStorage.getItem('taliesin_font_size')) || 17;
+
+window.changeReaderFont = (delta) => {
+  readerFontSize = Math.min(24, Math.max(14, readerFontSize + delta));
+  localStorage.setItem('taliesin_font_size', readerFontSize);
+  const textEl = document.querySelector('#modalBody .reading-text');
+  const labelEl = document.getElementById('fontSizeLabel');
+  if (textEl) textEl.style.fontSize = `${readerFontSize}px`;
+  if (labelEl) labelEl.textContent = `${readerFontSize}px`;
+};
+
+function estimateReadingMinutes(text) {
+  const words = String(text || '').trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.round(words / 180));
+}
+
+function bindReaderProgress() {
+  const card = document.querySelector('.modal-card');
+  const bar = document.getElementById('readingProgressBar');
+  if (!card || !bar) return;
+
+  const updateBar = () => {
+    const scrollable = card.scrollHeight - card.clientHeight;
+    const pct = scrollable > 0 ? Math.min(100, Math.round((card.scrollTop / scrollable) * 100)) : 100;
+    bar.style.width = `${pct}%`;
+  };
+
+  card.onscroll = updateBar;
+  setTimeout(updateBar, 50);
+}
+
 function getCurrentUser() {
   if (!state || !state.currentUserId) return null;
   return state.users.find(u => u.id === state.currentUserId) || null;
@@ -322,15 +353,27 @@ window.openArticle = (id) => {
   if (!art) return;
   const user = getCurrentUser();
   const comments = art.comments || [];
+  const minutes = estimateReadingMinutes(art.content);
 
   openModal(`
+    <div class="reading-progress-wrap"><div id="readingProgressBar" class="reading-progress-bar"></div></div>
     <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; padding-right:2rem;">
       <span class="badge">${art.category}</span>
       ${canEditArticle(art, user) ? `<button class="btn" onclick="openEditArticleModal('${art.id}')">✏️ Редагувати статтю</button>` : ''}
     </div>
     <h2 style="margin-top:0.6rem;">${art.title}</h2>
-    <p class="subtitle" style="margin-bottom:1.2rem;">Автор: ${art.author} · ${art.date}</p>
-    <div class="reading-text">${formatLiteraryText(art.content)}</div>
+    <p class="subtitle">Автор: ${art.author} · ${art.date}</p>
+
+    <div class="reader-toolbar">
+      <span class="subtitle">⏱ ~${minutes} хв читання</span>
+      <div class="font-controls">
+        <button type="button" class="btn" onclick="changeReaderFont(-1)" title="Зменшити шрифт">A-</button>
+        <span id="fontSizeLabel" class="subtitle" style="min-width:38px; text-align:center;">${readerFontSize}px</span>
+        <button type="button" class="btn" onclick="changeReaderFont(1)" title="Збільшити шрифт">A+</button>
+      </div>
+    </div>
+
+    <div class="reading-text" style="font-size:${readerFontSize}px;">${formatLiteraryText(art.content)}</div>
     <hr style="margin:1.5rem 0; border-color:var(--border);" />
     <h3>Коментарі (${comments.length})</h3>
     <div>
@@ -341,6 +384,8 @@ window.openArticle = (id) => {
       <button type="submit" class="btn btn-primary">Надіслати</button>
     </form>
   `);
+
+  bindReaderProgress();
 
   document.getElementById('commentForm').onsubmit = async (e) => {
     e.preventDefault();
@@ -447,25 +492,60 @@ function renderBooks() {
 
 window.readChapter = async (bookId, chapterId) => {
   const book = state.books.find(b => b.id === bookId);
-  const chap = book?.chapters.find(c => c.id === chapterId);
+  const chapters = book?.chapters || [];
+  const chapIndex = chapters.findIndex(c => c.id === chapterId);
+  const chap = chapters[chapIndex];
   if (!chap) return;
 
   const user = getCurrentUser();
   const isAuthor = canEditBook(book, user);
+  const unlocked = user ? user.unlockedChapters : [];
 
   try {
     if (chap.price > 0 && !isAuthor) {
       await TaliesinAPI.unlockChapter(chap.id, chap.price, chap.title, book.author_id);
       await refresh();
     }
+
+    const prevChap = chapIndex > 0 ? chapters[chapIndex - 1] : null;
+    const nextChap = chapIndex < chapters.length - 1 ? chapters[chapIndex + 1] : null;
+    const nextIsOpen = nextChap && (nextChap.price === 0 || unlocked.includes(nextChap.id) || isAuthor);
+    const minutes = estimateReadingMinutes(chap.content);
+
     openModal(`
+      <div class="reading-progress-wrap"><div id="readingProgressBar" class="reading-progress-bar"></div></div>
       <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; padding-right:2rem;">
-        <span class="badge">${book.title}</span>
+        <span class="badge">${book.title} · Глава ${chapIndex + 1} з ${chapters.length}</span>
         ${isAuthor ? `<button class="btn" onclick="openEditChapterModal('${book.id}', '${chap.id}')">✏️ Редагувати главу</button>` : ''}
       </div>
       <h2 style="margin-top:0.6rem;">${chap.title}</h2>
-      <div class="reading-text" style="margin-top:1rem;">${formatLiteraryText(chap.content)}</div>
+
+      <div class="reader-toolbar">
+        <span class="subtitle">⏱ ~${minutes} хв читання</span>
+        <div class="font-controls">
+          <button type="button" class="btn" onclick="changeReaderFont(-1)" title="Зменшити шрифт">A-</button>
+          <span id="fontSizeLabel" class="subtitle" style="min-width:38px; text-align:center;">${readerFontSize}px</span>
+          <button type="button" class="btn" onclick="changeReaderFont(1)" title="Збільшити шрифт">A+</button>
+        </div>
+      </div>
+
+      <div class="reading-text" style="font-size:${readerFontSize}px;">${formatLiteraryText(chap.content)}</div>
+
+      <div class="chapter-nav-footer">
+        ${prevChap
+          ? `<button class="btn" onclick="readChapter('${book.id}', '${prevChap.id}')">← ${prevChap.title}</button>`
+          : '<span></span>'}
+        ${nextChap
+          ? `<button class="btn btn-primary" onclick="readChapter('${book.id}', '${nextChap.id}')">
+              ${nextChap.title} ${nextIsOpen ? '→' : `(${nextChap.price} 🪙)`}
+            </button>`
+          : '<span class="subtitle">Кінець доступних глав</span>'}
+      </div>
     `);
+
+    const card = document.querySelector('.modal-card');
+    if (card) card.scrollTop = 0;
+    bindReaderProgress();
   } catch (err) {
     alert(err.message);
   }
