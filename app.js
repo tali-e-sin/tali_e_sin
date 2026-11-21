@@ -475,6 +475,10 @@ modalBackdrop.addEventListener('click', (e) => { if (e.target === modalBackdrop)
 function renderHeader() {
   const user = getCurrentUser();
   document.getElementById('userCoins').textContent = user ? user.coins : 0;
+  const streakInfo = getStreakStatus(user);
+  const streakEl = document.getElementById('userStreak');
+  if (streakEl) streakEl.textContent = streakInfo.activeStreak;
+
   document.querySelectorAll('.admin-only').forEach(el => el.classList.toggle('hidden', !user || user.role !== 'admin'));
   document.querySelectorAll('.auth-only').forEach(el => el.classList.toggle('hidden', !user));
 
@@ -525,10 +529,6 @@ function openAuthModal() {
   const tabRegister = document.getElementById('tabRegister');
   const loginForm = document.getElementById('loginForm');
   const registerForm = document.getElementById('registerForm');
-
-  const streakInfo = getStreakStatus(user);
-  const streakEl = document.getElementById('userStreak');
-  if (streakEl) streakEl.textContent = streakInfo.activeStreak;
 
   tabLogin.onclick = () => {
     tabLogin.classList.add('active');
@@ -1339,6 +1339,16 @@ function renderProfile() {
     });
   });
 
+  const streakInfo = getStreakStatus(user);
+  document.getElementById('profileSummary').innerHTML = `
+    <div class="stat-box"><strong>${user.coins} 🪙</strong>Поточний баланс</div>
+    <div class="stat-box" style="cursor:pointer;" onclick="openDailyStreakModal()" title="Відкрити ритуал Вогнища">
+      <strong>${streakInfo.activeStreak} 🔥</strong>Серія днів (${streakInfo.claimedToday ? 'забрано' : `+${streakInfo.nextReward} 🪙`})
+    </div>
+    <div class="stat-box"><strong>${unlockedItems.length}</strong>Куплених / відкритих глав</div>
+    <div class="stat-box"><strong>${myArticles.length + myBooks.length}</strong>Створених творів</div>
+  `;
+
   const favBooks = state.books.filter(b => (user.favoriteBooks || []).includes(b.id));
   const favContainer = document.getElementById('profileFavoritesList');
   const favArticles = state.articles.filter(a => (user.favoriteArticles || []).includes(a.id));
@@ -1381,12 +1391,6 @@ function renderProfile() {
         }).join('')
       : '<p class="subtitle">Ваша книжкова полиця поки порожня. Натисніть «🔖 В обране» на будь-якій книзі.</p>';
   }
-
-  document.getElementById('profileSummary').innerHTML = `
-    <div class="stat-box"><strong>${user.coins} 🪙</strong>Поточний баланс</div>
-    <div class="stat-box"><strong>${unlockedItems.length}</strong>Куплених / відкритих глав</div>
-    <div class="stat-box"><strong>${myArticles.length + myBooks.length}</strong>Створених творів</div>
-  `;
 
   document.getElementById('profileNewName').value = user.name;
   const bioInput = document.getElementById('profileNewBio');
