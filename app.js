@@ -65,10 +65,10 @@ function canEditBook(book, user) {
 
 function getBookRatingStats(book) {
   const reviews = Array.isArray(book?.reviews) ? book.reviews : [];
-  if (!reviews.length) return { avg: 0, count: 0, label: '☆ Без оцінок' };
+  if (!reviews.length) return { avg: 'Без оцінок', count: 0, hasRatings: false };
   const sum = reviews.reduce((acc, r) => acc + (Number(r.rating) || 0), 0);
   const avg = (sum / reviews.length).toFixed(1);
-  return { avg, count: reviews.length, label: `⭐ ${avg} (${reviews.length})` };
+  return { avg, count: reviews.length, hasRatings: true };
 }
 
 function renderAuthorLink(authorName, authorId = '') {
@@ -437,6 +437,11 @@ function renderArticles() {
     const pct = Math.round(savedRatio * 100);
     const isFav = favArticles.includes(art.id);
 
+    const likedBy = Array.isArray(art.liked_by) ? art.liked_by : [];
+    const isLiked = user ? likedBy.includes(user.id) : false;
+    const likesCount = likedBy.length || art.likes || 0;
+    const commentsCount = (art.comments || []).length;
+
     return `
       <article class="card" style="${hasBookmark ? 'border-color: var(--accent);' : ''}">
         <div>
@@ -451,7 +456,14 @@ function renderArticles() {
         <div>
           <div class="meta-row" style="margin-bottom:0.8rem;">
             <span>✍️ ${renderAuthorLink(art.author, art.author_id)}</span>
-            <span>❤️ ${art.likes} · 💬 ${(art.comments || []).length}</span>
+            <div class="icon-stats-group">
+              <button type="button" class="icon-stat-btn ${isLiked ? 'active' : ''}" onclick="likeArticle('${art.id}')" title="${isLiked ? 'Прибрати вподобання' : 'Вподобати'}">
+                ${isLiked ? '❤️' : '🤍'} <span>${likesCount}</span>
+              </button>
+              <button type="button" class="icon-stat-btn" onclick="openArticle('${art.id}', true)" title="Перейти до коментарів">
+                💬 <span>${commentsCount}</span>
+              </button>
+            </div>
           </div>
           <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
             <button class="btn btn-primary" onclick="openArticle('${art.id}')">
@@ -460,7 +472,6 @@ function renderArticles() {
             <button class="btn ${isFav ? 'btn-primary' : ''}" onclick="toggleFavoriteArticle('${art.id}')">
               ${isFav ? '★ В обраному' : '🔖 В обране'}
             </button>
-            <button class="btn" onclick="likeArticle('${art.id}')">❤️ Вподобати</button>
             ${canEditArticle(art, user) ? `<button class="btn" onclick="openEditArticleModal('${art.id}')">✏️ Редагувати</button>` : ''}
           </div>
         </div>
@@ -468,6 +479,16 @@ function renderArticles() {
     `;
   }).join('');
 }
+
+window.likeArticle = async (id) => {
+  if (!getCurrentUser()) return openAuthModal();
+  try {
+    await TaliesinAPI.toggleLike(id);
+    await refresh();
+  } catch (err) {
+    alert(err.message);
+  }
+};
 
 window.toggleFavoriteArticle = async (articleId) => {
   const user = getCurrentUser();
@@ -480,7 +501,7 @@ window.toggleFavoriteArticle = async (articleId) => {
   }
 };
 
-window.openArticle = (id) => {
+window.openArticle = (id, scrollToComments = false) => {
   const art = state.articles.find(a => a.id === id);
   if (!art) return;
   const user = getCurrentUser();
@@ -488,15 +509,22 @@ window.openArticle = (id) => {
   const minutes = estimateReadingMinutes(art.content);
   const isFav = (user?.favoriteArticles || []).includes(art.id);
 
+  const likedBy = Array.isArray(art.liked_by) ? art.liked_by : [];
+  const isLiked = user ? likedBy.includes(user.id) : false;
+  const likesCount = likedBy.length || art.likes || 0;
+
   openModal(`
     <div class="reading-progress-wrap"><div id="readingProgressBar" class="reading-progress-bar"></div></div>
     <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; padding-right:2rem;">
       <span class="badge">${art.category}</span>
-      <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+      <div style="display:flex; gap:0.4rem; flex-wrap:wrap; align-items:center;">
+        <button type="button" class="icon-stat-btn ${isLiked ? 'active' : ''}" onclick="likeArticle('${art.id}').then(() => openArticle('${art.id}'))" title="Вподобати">
+          ${isLiked ? '❤️' : '🤍'} <span>${likesCount}</span>
+        </button>
         <button class="btn ${isFav ? 'btn-primary' : ''}" onclick="toggleFavoriteArticle('${art.id}').then(() => openArticle('${art.id}'))">
           ${isFav ? '★ В обраному' : '🔖 В обране'}
         </button>
-        ${canEditArticle(art, user) ? `<button class="btn" onclick="openEditArticleModal('${art.id}')">✏️ Редагувати статтю</button>` : ''}
+        ${canEditArticle(art, user) ? `<button class="btn" onclick="openEditArticleModal('${art.id}')">✏️ Редагувати</button>` : ''}
       </div>
     </div>
     <h2 style="margin-top:0.6rem;">${art.title}</h2>
@@ -512,10 +540,15 @@ window.openArticle = (id) => {
     </div>
 
     <div class="reading-text" style="font-size:${readerFontSize}px;">${formatLiteraryText(art.content)}</div>
-    <hr style="margin:1.5rem 0; border-color:var(--border);" />
+    <hr id="articleCommentsSection" style="margin:1.5rem 0; border-color:var(--border);" />
     <h3>Коментарі (${comments.length})</h3>
     <div>
-      ${comments.map(c => `<div class="comment-box"><strong>${c.author}:</strong> ${c.text}</div>`).join('') || '<p class="subtitle">Поки немає коментарів.</p>'}
+      ${comments.map(c => `
+        <div class="comment-box">
+          <strong>${renderAuthorLink(c.author, c.user_id || '')}:</strong> ${escapeHtml(c.text)}
+          ${c.date ? `<small class="subtitle" style="margin-left:0.4rem;">(${c.date})</small>` : ''}
+        </div>
+      `).join('') || '<p class="subtitle">Поки немає коментарів.</p>'}
     </div>
     
     <form id="commentForm" class="stack-form" style="margin-top:1rem;">
@@ -524,14 +557,20 @@ window.openArticle = (id) => {
     </form>
   `);
 
-  bindReaderProgress(`taliesin_scroll_art_${id}`);
+  if (scrollToComments) {
+    requestAnimationFrame(() => {
+      document.getElementById('articleCommentsSection')?.scrollIntoView({ behavior: 'smooth' });
+    });
+  } else {
+    bindReaderProgress(`taliesin_scroll_art_${id}`);
+  }
 
   document.getElementById('commentForm').onsubmit = async (e) => {
     e.preventDefault();
     try {
       await TaliesinAPI.addComment(id, document.getElementById('commentInput').value);
       await refresh();
-      openArticle(id);
+      openArticle(id, true);
     } catch (err) {
       alert(err.message);
     }
@@ -580,11 +619,6 @@ window.openEditArticleModal = (id) => {
   };
 };
 
-window.likeArticle = async (id) => {
-  await TaliesinAPI.toggleLike(id);
-  await refresh();
-};
-
 document.getElementById('articleSearch').addEventListener('input', renderArticles);
 document.getElementById('categoryFilter').addEventListener('change', renderArticles);
 
@@ -607,16 +641,8 @@ function renderBooks() {
       <div class="card">
         <div>
           <div class="meta-row" style="gap:0.4rem; flex-wrap:wrap;">
-            <div style="display:flex; gap:0.35rem; align-items:center; flex-wrap:wrap;">
-              <span class="badge">Книга</span>
-              <button class="badge" style="border:none; cursor:pointer;" onclick="openBookReviewsModal('${book.id}')" title="Переглянути або залишити відгук">
-                ${ratingInfo.label}
-              </button>
-            </div>
+            <span class="badge">Книга</span>
             <div style="display:flex; gap:0.35rem; flex-wrap:wrap;">
-              <button class="btn" style="padding:0.25rem 0.7rem; font-size:0.8rem;" onclick="openBookReviewsModal('${book.id}')">
-                💬 Відгуки
-              </button>
               <button class="btn ${isFav ? 'btn-primary' : ''}" style="padding:0.25rem 0.7rem; font-size:0.8rem;" onclick="toggleFavoriteBook('${book.id}')">
                 ${isFav ? '★ В обраному' : '🔖 В обране'}
               </button>
@@ -624,7 +650,17 @@ function renderBooks() {
             </div>
           </div>
           <h3 style="margin-top:0.5rem;">${book.title}</h3>
-          <p class="subtitle">Автор: ${renderAuthorLink(book.author, book.author_id)}</p>
+          <div class="meta-row" style="margin-bottom:0.6rem;">
+            <span>✍️ ${renderAuthorLink(book.author, book.author_id)}</span>
+            <div class="icon-stats-group">
+              <button type="button" class="icon-stat-btn ${ratingInfo.hasRatings ? 'active' : ''}" onclick="openBookReviewsModal('${book.id}')" title="Оцінити книгу">
+                ${ratingInfo.hasRatings ? '⭐' : '☆'} <span>${ratingInfo.avg}</span>
+              </button>
+              <button type="button" class="icon-stat-btn" onclick="openBookReviewsModal('${book.id}', true)" title="Відгуки читачів">
+                💬 <span>${ratingInfo.count}</span>
+              </button>
+            </div>
+          </div>
           <p>${book.description}</p>
           ${lastChap ? `
             <div style="margin:0.6rem 0 0.8rem;">
@@ -667,10 +703,11 @@ window.openBookReviewsModal = (bookId) => {
   const myExisting = user ? reviews.find(r => r.user_id === user.id) : null;
 
   const renderStars = (count) => '★'.repeat(count) + '☆'.repeat(5 - count);
+  const badgeText = ratingInfo.hasRatings ? `⭐ ${ratingInfo.avg} (${ratingInfo.count})` : '☆ Без оцінок';
 
   openModal(`
     <div style="padding-right:2rem;">
-      <span class="badge">${ratingInfo.label}</span>
+      <span class="badge">${badgeText}</span>
       <h2 style="margin-top:0.5rem;">${escapeHtml(book.title)}</h2>
       <p class="subtitle">Автор: ${renderAuthorLink(book.author, book.author_id)}</p>
       <p style="margin-top:0.5rem;">${escapeHtml(book.description || '')}</p>
