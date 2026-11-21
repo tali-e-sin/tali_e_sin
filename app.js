@@ -7,7 +7,7 @@ function getCurrentUser() {
 
 function canEditArticle(art, user) {
   if (!user || !art) return false;
-  return user.role === 'admin' || art.author === user.name;
+  return user.role === 'admin' || art.author_id === user.id || art.author === user.name;
 }
 
 function canEditBook(book, user) {
@@ -98,43 +98,72 @@ function renderHeader() {
 function openAuthModal() {
   openModal(`
     <h2>Вхід до tali_e_sin</h2>
-    <p class="subtitle">Увійдіть або створіть новий акаунт читача чи адміністратора</p>
-    <form id="loginForm" class="stack-form" style="margin-top:1rem;">
-      <input type="text" id="authName" class="input" placeholder="Ваше ім'я барда" required />
-      <input type="email" id="authEmail" class="input" placeholder="Email" required />
-      <select id="authRole" class="input">
-        <option value="user">Читач / Автор</option>
-        <option value="admin">Адміністратор</option>
-      </select>
-      <button type="submit" class="btn btn-primary">Продовжити</button>
-    </form>
-    <hr style="margin:1.2rem 0; border-color:var(--border);" />
-    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-      <button class="btn" id="demoUserBtn">Демо: Читач</button>
-      <button class="btn" id="demoAdminBtn">Демо: Адмін</button>
+    <p class="subtitle">Захищена авторизація барда та читача</p>
+    <div class="tabs" style="margin-top:1rem;">
+      <button type="button" class="tab-btn active" id="tabLogin">Увійти</button>
+      <button type="button" class="tab-btn" id="tabRegister">Реєстрація</button>
     </div>
+
+    <form id="loginForm" class="stack-form">
+      <input type="email" id="loginEmail" class="input" placeholder="Email" required />
+      <input type="password" id="loginPassword" class="input" placeholder="Пароль" required />
+      <button type="submit" class="btn btn-primary">Увійти в келію</button>
+    </form>
+
+    <form id="registerForm" class="stack-form hidden">
+      <input type="text" id="regName" class="input" placeholder="Ваше ім'я барда" required />
+      <input type="email" id="regEmail" class="input" placeholder="Email" required />
+      <input type="password" id="regPassword" class="input" placeholder="Пароль (мінімум 6 символів)" minlength="6" required />
+      <button type="submit" class="btn btn-primary">Створити акаунт (+30 🪙)</button>
+    </form>
   `);
 
-  document.getElementById('loginForm').onsubmit = async (e) => {
-    e.preventDefault();
-    await TaliesinAPI.login(
-      document.getElementById('authEmail').value,
-      document.getElementById('authName').value,
-      document.getElementById('authRole').value
-    );
-    closeModal();
-    await refresh();
+  const tabLogin = document.getElementById('tabLogin');
+  const tabRegister = document.getElementById('tabRegister');
+  const loginForm = document.getElementById('loginForm');
+  const registerForm = document.getElementById('registerForm');
+
+  tabLogin.onclick = () => {
+    tabLogin.classList.add('active');
+    tabRegister.classList.remove('active');
+    loginForm.classList.remove('hidden');
+    registerForm.classList.add('hidden');
   };
 
-  document.getElementById('demoUserBtn').onclick = async () => {
-    await TaliesinAPI.switchDemoRole('user');
-    closeModal();
-    await refresh();
+  tabRegister.onclick = () => {
+    tabRegister.classList.add('active');
+    tabLogin.classList.remove('active');
+    registerForm.classList.remove('hidden');
+    loginForm.classList.add('hidden');
   };
-  document.getElementById('demoAdminBtn').onclick = async () => {
-    await TaliesinAPI.switchDemoRole('admin');
-    closeModal();
-    await refresh();
+
+  loginForm.onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await TaliesinAPI.login({
+        email: document.getElementById('loginEmail').value,
+        password: document.getElementById('loginPassword').value
+      });
+      closeModal();
+      await refresh();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  registerForm.onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await TaliesinAPI.register({
+        name: document.getElementById('regName').value,
+        email: document.getElementById('regEmail').value,
+        password: document.getElementById('regPassword').value
+      });
+      closeModal();
+      await refresh();
+    } catch (err) {
+      alert(err.message);
+    }
   };
 }
 
