@@ -15,6 +15,78 @@ function canEditBook(book, user) {
   return user.role === 'admin' || book.author_id === user.id || book.author === user.name;
 }
 
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function formatInlineMarkdown(text) {
+  return escapeHtml(text)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>');
+}
+
+function formatLiteraryText(raw) {
+  if (!raw) return '';
+  const blocks = raw
+    .replace(/\r\n/g, '\n')
+    .split(/\n{2,}/)
+    .map(b => b.trim())
+    .filter(Boolean);
+
+  return blocks.map(block => {
+    if (/^(\*{3,}|-{3,}|—{3,})$/.test(block)) {
+      return `<div class="scene-divider">❖ ❖ ❖</div>`;
+    }
+    if (block.startsWith('>')) {
+      const quoteText = block.replace(/^>\s?/gm, '').replace(/\n/g, '<br>');
+      return `<blockquote>${formatInlineMarkdown(quoteText)}</blockquote>`;
+    }
+    const lines = block.split('\n').map(line => formatInlineMarkdown(line.trim())).join('<br>');
+    return `<p>${lines}</p>`;
+  }).join('');
+}
+
+function attachManuscriptImporter(fileInputId, titleInputId, contentTextareaId) {
+  const fileInput = document.getElementById(fileInputId);
+  if (!fileInput) return;
+
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      let text = String(event.target?.result || '').replace(/\r\n/g, '\n').trim();
+      const titleInput = document.getElementById(titleInputId);
+      const contentArea = document.getElementById(contentTextareaId);
+
+      // Якщо перший рядок у .md починається з "# Заголовок", витягуємо його
+      const headingMatch = text.match(/^#\s+(.+)\n+/);
+      let extractedTitle = '';
+
+      if (headingMatch) {
+        extractedTitle = headingMatch[1].trim();
+        text = text.slice(headingMatch[0].length).trim();
+      } else {
+        extractedTitle = file.name.replace(/\.(txt|md)$/i, '').replace(/[_-]+/g, ' ').trim();
+      }
+
+      if (titleInput && !titleInput.value.trim() && extractedTitle) {
+        titleInput.value = extractedTitle;
+      }
+      if (contentArea) {
+        contentArea.value = text;
+      }
+      fileInput.value = '';
+    };
+    reader.readAsText(file, 'UTF-8');
+  });
+}
+
 // --- Тема День / Вогнище ---
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -228,7 +300,7 @@ function renderArticles() {
           <span>${art.date}</span>
         </div>
         <h3>${art.title}</h3>
-        <p style="color:var(--text-muted);">${art.content.slice(0, 140)}...</p>
+        <p style="color:var(--text-muted);">${escapeHtml(art.content.replace(/[#*>]/g, '').slice(0, 140))}...</p>
       </div>
       <div>
         <div class="meta-row" style="margin-bottom:0.8rem;">
@@ -258,7 +330,7 @@ window.openArticle = (id) => {
     </div>
     <h2 style="margin-top:0.6rem;">${art.title}</h2>
     <p class="subtitle" style="margin-bottom:1.2rem;">Автор: ${art.author} · ${art.date}</p>
-    <div class="reading-text">${art.content}</div>
+    <div class="reading-text">${formatLiteraryText(art.content)}</div>
     <hr style="margin:1.5rem 0; border-color:var(--border);" />
     <h3>Коментарі (${comments.length})</h3>
     <div>
@@ -392,7 +464,7 @@ window.readChapter = async (bookId, chapterId) => {
         ${isAuthor ? `<button class="btn" onclick="openEditChapterModal('${book.id}', '${chap.id}')">✏️ Редагувати главу</button>` : ''}
       </div>
       <h2 style="margin-top:0.6rem;">${chap.title}</h2>
-      <div class="reading-text" style="margin-top:1rem;">${chap.content}</div>
+      <div class="reading-text" style="margin-top:1rem;">${formatLiteraryText(chap.content)}</div>
     `);
   } catch (err) {
     alert(err.message);
@@ -622,6 +694,9 @@ document.getElementById('chapterForm').addEventListener('submit', async (e) => {
     alert(err.message);
   }
 });
+
+attachManuscriptImporter('artFileInput', 'artTitle', 'artContent');
+attachManuscriptImporter('chapFileInput', 'chapTitle', 'chapContent');
 
 // --- Розширена Адмін-панель + Журнал безпеки ---
 async function renderAdmin() {
