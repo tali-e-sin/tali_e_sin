@@ -63,6 +63,84 @@ function canEditBook(book, user) {
   return user.role === 'admin' || book.author_id === user.id || book.author === user.name;
 }
 
+function renderAuthorLink(authorName, authorId = '') {
+  const safeName = escapeHtml(authorName || 'Невідомий бард');
+  const safeId = escapeHtml(authorId || '');
+  return `<button type="button" class="author-link" onclick="openAuthorProfile('${safeId}', '${safeName}')">${safeName}</button>`;
+}
+
+window.openAuthorProfile = (authorId, authorName) => {
+  const authorUser = state.users.find(u =>
+    (authorId && u.id === authorId) || u.name === authorName
+  );
+
+  const displayName = authorUser ? authorUser.name : authorName;
+  const roleBadge = authorUser?.role === 'admin' ? '👑 Хранитель порталу' : '🪶 Бард спільноти';
+  const bioText = authorUser?.bio?.trim()
+    ? escapeHtml(authorUser.bio)
+    : 'Цей бард ще не залишив свого девізу, але його сувої говорять самі за себе.';
+
+  const authorArticles = state.articles.filter(a =>
+    (authorId && a.author_id === authorId) || a.author === displayName
+  );
+  const authorBooks = state.books.filter(b =>
+    (authorId && b.author_id === authorId) || b.author === displayName
+  );
+
+  const totalLikes = authorArticles.reduce((sum, a) => sum + (a.likes || 0), 0);
+
+  openModal(`
+    <div style="padding-right:2rem;">
+      <span class="badge">${roleBadge}</span>
+      <h2 style="margin-top:0.6rem;">${escapeHtml(displayName)}</h2>
+      <blockquote style="margin:0.8rem 0; padding:0.7rem 1rem; border-left:3px solid var(--accent); background:var(--bg-subtle); border-radius:0 10px 10px 0; font-style:italic;">
+        ${bioText}
+      </blockquote>
+    </div>
+
+    <div class="stats-row" style="margin:1rem 0;">
+      <div class="stat-box"><strong>${authorBooks.length}</strong>Книг</div>
+      <div class="stat-box"><strong>${authorArticles.length}</strong>Статей</div>
+      <div class="stat-box"><strong>${totalLikes} ❤️</strong>Вподобань</div>
+    </div>
+
+    <h3>📚 Книги автора (${authorBooks.length})</h3>
+    <div style="margin-bottom:1.2rem;">
+      ${authorBooks.length
+        ? authorBooks.map(b => {
+            const firstChap = (b.chapters || [])[0];
+            return `
+              <div class="chapter-item" style="flex-wrap:wrap;">
+                <div>
+                  <strong>${escapeHtml(b.title)}</strong>
+                  <div class="subtitle" style="font-size:0.85rem;">${escapeHtml(b.description || '')} · Глав: ${(b.chapters || []).length}</div>
+                </div>
+                ${firstChap
+                  ? `<button class="btn btn-primary" onclick="readChapter('${b.id}', '${firstChap.id}')">Читати першу главу</button>`
+                  : '<small class="subtitle">Немає глав</small>'}
+              </div>
+            `;
+          }).join('')
+        : '<p class="subtitle">У цього автора поки немає опублікованих книг.</p>'}
+    </div>
+
+    <h3>📜 Статті та сувої (${authorArticles.length})</h3>
+    <div>
+      ${authorArticles.length
+        ? authorArticles.map(a => `
+            <div class="chapter-item" style="flex-wrap:wrap;">
+              <div>
+                <strong>${escapeHtml(a.title)}</strong>
+                <div class="subtitle" style="font-size:0.82rem;">${escapeHtml(a.category)} · ${a.date} · ❤️ ${a.likes}</div>
+              </div>
+              <button class="btn" onclick="openArticle('${a.id}')">Читати</button>
+            </div>
+          `).join('')
+        : '<p class="subtitle">У цього автора поки немає статей.</p>'}
+    </div>
+  `);
+};
+
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -364,7 +442,7 @@ function renderArticles() {
         </div>
         <div>
           <div class="meta-row" style="margin-bottom:0.8rem;">
-            <span>✍️ ${art.author}</span>
+            <span>✍️ ${renderAuthorLink(art.author, art.author_id)}</span>
             <span>❤️ ${art.likes} · 💬 ${(art.comments || []).length}</span>
           </div>
           <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
@@ -414,7 +492,7 @@ window.openArticle = (id) => {
       </div>
     </div>
     <h2 style="margin-top:0.6rem;">${art.title}</h2>
-    <p class="subtitle">Автор: ${art.author} · ${art.date}</p>
+    <p class="subtitle">Автор: ${renderAuthorLink(art.author, art.author_id)} · ${art.date}</p>
 
     <div class="reader-toolbar">
       <span class="subtitle">⏱ ~${minutes} хв читання</span>
@@ -529,8 +607,7 @@ function renderBooks() {
             </div>
           </div>
           <h3 style="margin-top:0.5rem;">${book.title}</h3>
-          <p class="subtitle">Автор: ${book.author}</p>
-          <p>${book.description}</p>
+          <p class="subtitle">Автор: ${renderAuthorLink(book.author, book.author_id)}</p>          <p>${book.description}</p>
           ${lastChap ? `
             <div style="margin:0.6rem 0 0.8rem;">
               <button class="btn btn-primary" style="width:100%;" onclick="readChapter('${book.id}', '${lastChap.id}')">
@@ -791,6 +868,8 @@ function renderProfile() {
   `;
 
   document.getElementById('profileNewName').value = user.name;
+  const bioInput = document.getElementById('profileNewBio');
+if (bioInput) bioInput.value = user.bio || '';
 
   const history = user.coinHistory || [];
   document.getElementById('profileHistoryList').innerHTML = history.length
@@ -843,10 +922,13 @@ function renderProfile() {
 document.getElementById('profileNameForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
-    await TaliesinAPI.updateProfileName(document.getElementById('profileNewName').value);
+    await TaliesinAPI.updateProfileInfo({
+      name: document.getElementById('profileNewName').value,
+      bio: document.getElementById('profileNewBio')?.value || ''
+    });
     await refresh();
     renderProfile();
-    alert('Ім’я барда успішно оновлено!');
+    alert('Профіль барда успішно оновлено!');
   } catch (err) {
     alert(err.message);
   }
