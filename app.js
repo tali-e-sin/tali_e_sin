@@ -37,19 +37,16 @@ document.getElementById('themeToggle').addEventListener('click', () => {
 
 // --- Навігація ---
 function navigateTo(target) {
+  const user = getCurrentUser();
+  if (target === 'admin' && (!user || user.role !== 'admin')) {
+    target = 'articles';
+  }
   document.querySelectorAll('.nav-link').forEach(n => n.classList.toggle('active', n.dataset.nav === target));
   document.querySelectorAll('.view-section').forEach(sec => sec.classList.toggle('hidden', sec.id !== `view-${target}`));
   if (target === 'write') populateBookSelect();
   if (target === 'profile') renderProfile();
   if (target === 'admin') renderAdmin();
 }
-
-document.querySelectorAll('[data-nav]').forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    e.preventDefault();
-    navigateTo(btn.dataset.nav);
-  });
-});
 
 // --- Модальне вікно ---
 const modalBackdrop = document.getElementById('modalBackdrop');
