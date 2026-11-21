@@ -406,7 +406,12 @@ window.openArticle = (id) => {
     <div class="reading-progress-wrap"><div id="readingProgressBar" class="reading-progress-bar"></div></div>
     <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; padding-right:2rem;">
       <span class="badge">${art.category}</span>
-      ${canEditArticle(art, user) ? `<button class="btn" onclick="openEditArticleModal('${art.id}')">✏️ Редагувати статтю</button>` : ''}
+      <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+        <button class="btn ${isFav ? 'btn-primary' : ''}" onclick="toggleFavoriteArticle('${art.id}').then(() => openArticle('${art.id}'))">
+          ${isFav ? '★ В обраному' : '🔖 В обране'}
+        </button>
+        ${canEditArticle(art, user) ? `<button class="btn" onclick="openEditArticleModal('${art.id}')">✏️ Редагувати статтю</button>` : ''}
+      </div>
     </div>
     <h2 style="margin-top:0.6rem;">${art.title}</h2>
     <p class="subtitle">Автор: ${art.author} · ${art.date}</p>
@@ -425,16 +430,6 @@ window.openArticle = (id) => {
     <h3>Коментарі (${comments.length})</h3>
     <div>
       ${comments.map(c => `<div class="comment-box"><strong>${c.author}:</strong> ${c.text}</div>`).join('') || '<p class="subtitle">Поки немає коментарів.</p>'}
-    </div>
-
-    <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; padding-right:2rem;">
-      <span class="badge">${art.category}</span>
-      <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
-        <button class="btn ${isFav ? 'btn-primary' : ''}" onclick="toggleFavoriteArticle('${art.id}').then(() => openArticle('${art.id}'))">
-          ${isFav ? '★ В обраному' : '🔖 В обране'}
-        </button>
-        ${canEditArticle(art, user) ? `<button class="btn" onclick="openEditArticleModal('${art.id}')">✏️ Редагувати статтю</button>` : ''}
-      </div>
     </div>
     
     <form id="commentForm" class="stack-form" style="margin-top:1rem;">
