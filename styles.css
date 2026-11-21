@@ -448,3 +448,20 @@ h1, h2, h3, .brand-name {
   0%   { opacity: 0.65; transform: scaleX(0.96); }
   100% { opacity: 1; transform: scaleX(1.04); }
 }
+
+/* Липка кнопка закриття вікна читання */
+#closeModal {
+  position: sticky;
+  top: 0;
+  float: right;
+  z-index: 10;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
