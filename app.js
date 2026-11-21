@@ -16,19 +16,36 @@ function estimateReadingMinutes(text) {
   return Math.max(1, Math.round(words / 180));
 }
 
-function bindReaderProgress() {
+function bindReaderProgress(storageKey = null) {
   const card = document.querySelector('.modal-card');
   const bar = document.getElementById('readingProgressBar');
   if (!card || !bar) return;
 
+  // Відновлюємо збережене місце прокрутки, якщо воно є
+  if (storageKey) {
+    const savedRatio = Number(localStorage.getItem(storageKey));
+    if (savedRatio > 0 && savedRatio < 0.98) {
+      requestAnimationFrame(() => {
+        const scrollable = card.scrollHeight - card.clientHeight;
+        if (scrollable > 0) {
+          card.scrollTop = Math.round(scrollable * savedRatio);
+        }
+      });
+    }
+  }
+
   const updateBar = () => {
     const scrollable = card.scrollHeight - card.clientHeight;
-    const pct = scrollable > 0 ? Math.min(100, Math.round((card.scrollTop / scrollable) * 100)) : 100;
-    bar.style.width = `${pct}%`;
+    const ratio = scrollable > 0 ? Math.min(1, Math.max(0, card.scrollTop / scrollable)) : 1;
+    bar.style.width = `${Math.round(ratio * 100)}%`;
+
+    if (storageKey && scrollable > 0) {
+      localStorage.setItem(storageKey, ratio.toFixed(4));
+    }
   };
 
   card.onscroll = updateBar;
-  setTimeout(updateBar, 50);
+  setTimeout(updateBar, 60);
 }
 
 function getCurrentUser() {
@@ -170,6 +187,10 @@ function openModal(html) {
 function closeModal() {
   modalBackdrop.classList.add('hidden');
   modalBody.innerHTML = '';
+  if (state) {
+    renderArticles();
+    renderBooks();
+  }
 }
 
 document.getElementById('closeModal').addEventListener('click', closeModal);
@@ -323,29 +344,38 @@ function renderArticles() {
     (a.title.toLowerCase().includes(query) || a.content.toLowerCase().includes(query))
   );
 
-  list.innerHTML = filtered.map(art => `
-    <article class="card">
-      <div>
-        <div class="meta-row" style="margin-bottom:0.6rem;">
-          <span class="badge">${art.category}</span>
-          <span>${art.date}</span>
+  list.innerHTML = filtered.map(art => {
+    const savedRatio = Number(localStorage.getItem(`taliesin_scroll_art_${art.id}`));
+    const hasBookmark = savedRatio > 0.03 && savedRatio < 0.95;
+    const pct = Math.round(savedRatio * 100);
+
+    return `
+      <article class="card" style="${hasBookmark ? 'border-color: var(--accent);' : ''}">
+        <div>
+          <div class="meta-row" style="margin-bottom:0.6rem; gap:0.4rem; flex-wrap:wrap;">
+            <span class="badge">${art.category}</span>
+            ${hasBookmark ? `<span class="badge" style="background:var(--accent); color:#fff;">🔖 ${pct}%</span>` : ''}
+            <span>${art.date}</span>
+          </div>
+          <h3>${art.title}</h3>
+          <p style="color:var(--text-muted);">${escapeHtml(art.content.replace(/[#*>]/g, '').slice(0, 140))}...</p>
         </div>
-        <h3>${art.title}</h3>
-        <p style="color:var(--text-muted);">${escapeHtml(art.content.replace(/[#*>]/g, '').slice(0, 140))}...</p>
-      </div>
-      <div>
-        <div class="meta-row" style="margin-bottom:0.8rem;">
-          <span>✍️ ${art.author}</span>
-          <span>❤️ ${art.likes} · 💬 ${(art.comments || []).length}</span>
+        <div>
+          <div class="meta-row" style="margin-bottom:0.8rem;">
+            <span>✍️ ${art.author}</span>
+            <span>❤️ ${art.likes} · 💬 ${(art.comments || []).length}</span>
+          </div>
+          <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <button class="btn btn-primary" onclick="openArticle('${art.id}')">
+              ${hasBookmark ? '▶ Продовжити' : 'Читати'}
+            </button>
+            <button class="btn" onclick="likeArticle('${art.id}')">❤️ Вподобати</button>
+            ${canEditArticle(art, user) ? `<button class="btn" onclick="openEditArticleModal('${art.id}')">✏️ Редагувати</button>` : ''}
+          </div>
         </div>
-        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-          <button class="btn btn-primary" onclick="openArticle('${art.id}')">Читати</button>
-          <button class="btn" onclick="likeArticle('${art.id}')">❤️ Вподобати</button>
-          ${canEditArticle(art, user) ? `<button class="btn" onclick="openEditArticleModal('${art.id}')">✏️ Редагувати</button>` : ''}
-        </div>
-      </div>
-    </article>
-  `).join('');
+      </article>
+    `;
+  }).join('');
 }
 
 window.openArticle = (id) => {
@@ -385,7 +415,7 @@ window.openArticle = (id) => {
     </form>
   `);
 
-  bindReaderProgress();
+  bindReaderProgress(`taliesin_scroll_art_${id}`);
 
   document.getElementById('commentForm').onsubmit = async (e) => {
     e.preventDefault();
@@ -579,9 +609,7 @@ window.readChapter = async (bookId, chapterId) => {
       </div>
     `);
 
-    const card = document.querySelector('.modal-card');
-    if (card) card.scrollTop = 0;
-    bindReaderProgress();
+    bindReaderProgress(`taliesin_scroll_${bookId}_${chapterId}`);
   } catch (err) {
     alert(err.message);
   }
