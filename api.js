@@ -222,14 +222,19 @@ window.TaliesinAPI = {
   },
 
   async toggleLike(articleId) {
-    const { data: art } = await sbClient.from('articles').select('likes').eq('id', articleId).single();
-    if (!art) return;
-    await sbClient.from('articles').update({ likes: art.likes + 1 }).eq('id', articleId);
+    const { error } = await sbClient.rpc('toggle_article_like', {
+      p_article_id: String(articleId)
+    });
+    if (error) throw new Error(error.message);
   },
 
   async addComment(articleId, text) {
-    const { data: { user } } = await sbClient.auth.getUser();
-    if (!user) throw new Error('Увійдіть, щоб залишати коментарі');
+    const { error } = await sbClient.rpc('add_article_comment', {
+      p_article_id: String(articleId),
+      p_text: String(text || '')
+    });
+    if (error) throw new Error(error.message);
+  },
 
     const [{ data: profile }, { data: art }] = await Promise.all([
       sbClient.from('profiles').select('name').eq('id', user.id).single(),
