@@ -191,6 +191,16 @@ window.TaliesinAPI = {
     return data;
   },
 
+  async tipBard({ recipientId, amount, workTitle = '', note = '' }) {
+    const { error } = await sbClient.rpc('tip_bard', {
+      p_recipient_id: String(recipientId || ''),
+      p_amount: Number(amount),
+      p_work_title: String(workTitle || ''),
+      p_note: String(note || '')
+    });
+    if (error) throw new Error(error.message);
+  },
+
   async createArticle({ title, category, content }) {
     const { data: { user } } = await sbClient.auth.getUser();
     if (!user) throw new Error('Увійдіть, щоб публікувати статті');
