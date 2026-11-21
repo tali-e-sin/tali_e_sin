@@ -28,6 +28,7 @@ window.TaliesinAPI = {
       unlockedChapters: u.unlocked_chapters || [],
       coinHistory: u.coin_history || [],
       favoriteBooks: Array.isArray(u.favorite_books) ? u.favorite_books : [],
+      favoriteArticles: Array.isArray(u.favorite_articles) ? u.favorite_articles : [],
       readingProgress: (u.reading_progress && typeof u.reading_progress === 'object') ? u.reading_progress : {}
     }));
 
@@ -67,7 +68,7 @@ window.TaliesinAPI = {
     await sbClient.rpc('claim_guest_logs', { p_guest_id: getGuestId() });
     return data.user;
   },
-  
+
   async logout() {
     await sbClient.auth.signOut();
   },
@@ -83,54 +84,80 @@ window.TaliesinAPI = {
   },
 
   async toggleFavoriteBook(bookId) {
-  const { data: { session } } = await sbClient.auth.getSession();
-  if (!session?.user) throw new Error('Увійдіть, щоб додавати книги в Обране');
+    const { data: { session } } = await sbClient.auth.getSession();
+    if (!session?.user) throw new Error('Увійдіть, щоб додавати книги в Обране');
 
-  const uid = session.user.id;
-  const { data: prof, error: fetchErr } = await sbClient
-    .from('profiles')
-    .select('favorite_books')
-    .eq('id', uid)
-    .single();
+    const uid = session.user.id;
+    const { data: prof, error: fetchErr } = await sbClient
+      .from('profiles')
+      .select('favorite_books')
+      .eq('id', uid)
+      .single();
 
-  if (fetchErr) throw new Error(fetchErr.message);
+    if (fetchErr) throw new Error(fetchErr.message);
 
-  const current = Array.isArray(prof?.favorite_books) ? prof.favorite_books : [];
-  const exists = current.includes(bookId);
-  const updated = exists ? current.filter(id => id !== bookId) : [...current, bookId];
+    const current = Array.isArray(prof?.favorite_books) ? prof.favorite_books : [];
+    const exists = current.includes(bookId);
+    const updated = exists ? current.filter(id => id !== bookId) : [...current, bookId];
 
-  const { error } = await sbClient
-    .from('profiles')
-    .update({ favorite_books: updated })
-    .eq('id', uid);
+    const { error } = await sbClient
+      .from('profiles')
+      .update({ favorite_books: updated })
+      .eq('id', uid);
 
-  if (error) throw new Error(error.message);
-  return !exists;
-},
+    if (error) throw new Error(error.message);
+    return !exists;
+  },
 
-async saveReadingBookmark(bookId, chapterId) {
-  const { data: { session } } = await sbClient.auth.getSession();
-  if (!session?.user) return;
+  async toggleFavoriteArticle(articleId) {
+    const { data: { session } } = await sbClient.auth.getSession();
+    if (!session?.user) throw new Error('Увійдіть, щоб додавати статті в Обране');
 
-  const uid = session.user.id;
-  const { data: prof } = await sbClient
-    .from('profiles')
-    .select('reading_progress')
-    .eq('id', uid)
-    .single();
+    const uid = session.user.id;
+    const { data: prof, error: fetchErr } = await sbClient
+      .from('profiles')
+      .select('favorite_articles')
+      .eq('id', uid)
+      .single();
 
-  const current = (prof?.reading_progress && typeof prof.reading_progress === 'object')
-    ? prof.reading_progress
-    : {};
+    if (fetchErr) throw new Error(fetchErr.message);
 
-  if (current[bookId] === chapterId) return;
+    const current = Array.isArray(prof?.favorite_articles) ? prof.favorite_articles : [];
+    const exists = current.includes(articleId);
+    const updated = exists ? current.filter(id => id !== articleId) : [...current, articleId];
 
-  const updated = { ...current, [bookId]: chapterId };
-  await sbClient
-    .from('profiles')
-    .update({ reading_progress: updated })
-    .eq('id', uid);
-},
+    const { error } = await sbClient
+      .from('profiles')
+      .update({ favorite_articles: updated })
+      .eq('id', uid);
+
+    if (error) throw new Error(error.message);
+    return !exists;
+  },
+
+  async saveReadingBookmark(bookId, chapterId) {
+    const { data: { session } } = await sbClient.auth.getSession();
+    if (!session?.user) return;
+
+    const uid = session.user.id;
+    const { data: prof } = await sbClient
+      .from('profiles')
+      .select('reading_progress')
+      .eq('id', uid)
+      .single();
+
+    const current = (prof?.reading_progress && typeof prof.reading_progress === 'object')
+      ? prof.reading_progress
+      : {};
+
+    if (current[bookId] === chapterId) return;
+
+    const updated = { ...current, [bookId]: chapterId };
+    await sbClient
+      .from('profiles')
+      .update({ reading_progress: updated })
+      .eq('id', uid);
+  },
 
   async addCoins(amount = 15) {
     const { data, error } = await sbClient.rpc('claim_ad_reward', { reward_amount: amount });
