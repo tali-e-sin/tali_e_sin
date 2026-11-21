@@ -99,8 +99,14 @@ window.TaliesinAPI = {
 
     if (error) throw new Error(error.message);
     if (!data || data.length === 0) {
-      throw new Error('База даних відхилила оновлення профілю (перевірте RLS політику UPDATE)');
+      throw new Error('База даних відхилила оновлення профілю');
     }
+
+    // Оновлюємо відображуване ім'я в уже опублікованих статтях і книгах автора
+    await Promise.all([
+      sbClient.from('articles').update({ author: cleanName }).eq('author_id', user.id),
+      sbClient.from('books').update({ author: cleanName }).eq('author_id', user.id)
+    ]);
   },
 
   async toggleFavoriteBook(bookId) {
