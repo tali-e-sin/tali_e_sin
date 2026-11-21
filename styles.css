@@ -513,3 +513,32 @@ h1, h2, h3, .brand-name {
   color: var(--accent);
   font-weight: 600;
 }
+
+/* Вкладені відповіді на коментарі */
+.comment-replies {
+  margin-left: 1.15rem;
+  padding-left: 0.85rem;
+  border-left: 2px solid var(--border);
+  margin-top: 0.45rem;
+}
+
+.comment-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.45rem;
+}
+
+.reply-inline-form {
+  display: flex;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.reply-inline-form .input {
+  flex: 1;
+  min-width: 180px;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.9rem;
+}
