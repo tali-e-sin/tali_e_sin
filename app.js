@@ -197,12 +197,6 @@ window.openAuthorProfile = (authorId, authorName) => {
     ? escapeHtml(authorUser.bio)
     : 'Цей бард ще не залишив свого девізу, але його сувої говорять самі за себе.';
 
-  ${authorUser && (!getCurrentUser() || getCurrentUser().id !== authorUser.id)
-  ? `<div style="margin-top:0.8rem;">
-       <button type="button" class="btn btn-primary" onclick="openTipModal('${escapeHtml(authorUser.id)}', '${escapeHtml(displayName)}')">🎁 Надіслати дарунок барду</button>
-     </div>`
-  : ''}
-
   const authorArticles = state.articles.filter(a =>
     (authorId && a.author_id === authorId) || a.author === displayName
   );
@@ -219,6 +213,11 @@ window.openAuthorProfile = (authorId, authorName) => {
       <blockquote style="margin:0.8rem 0; padding:0.7rem 1rem; border-left:3px solid var(--accent); background:var(--bg-subtle); border-radius:0 10px 10px 0; font-style:italic;">
         ${bioText}
       </blockquote>
+      ${authorUser && (!getCurrentUser() || getCurrentUser().id !== authorUser.id)
+        ? `<div style="margin-top:0.8rem;">
+             <button type="button" class="btn btn-primary" onclick="openTipModal('${escapeHtml(authorUser.id)}', '${escapeHtml(displayName)}')">🎁 Надіслати дарунок барду</button>
+           </div>`
+        : ''}
     </div>
 
     <div class="stats-row" style="margin:1rem 0;">
