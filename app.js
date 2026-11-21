@@ -53,6 +53,22 @@ function getCurrentUser() {
   return state.users.find(u => u.id === state.currentUserId) || null;
 }
 
+function getStreakStatus(user) {
+  if (!user) return { activeStreak: 0, claimedToday: false, nextReward: 5 };
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  const yesterdayUtc = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+
+  const claimedToday = user.lastStreakDate === todayUtc;
+  const isAlive = claimedToday || user.lastStreakDate === yesterdayUtc;
+  const activeStreak = isAlive ? (user.streakCount || 0) : 0;
+
+  const upcomingDay = claimedToday ? activeStreak : activeStreak + 1;
+  const rewardsMap = [5, 8, 11, 14, 17, 20, 25];
+  const nextReward = rewardsMap[Math.min(Math.max(upcomingDay - 1, 0), 6)];
+
+  return { activeStreak, claimedToday, nextReward, upcomingDay };
+}
+
 function canEditArticle(art, user) {
   if (!user || !art) return false;
   return user.role === 'admin' || art.author_id === user.id || art.author === user.name;
@@ -509,6 +525,10 @@ function openAuthModal() {
   const tabRegister = document.getElementById('tabRegister');
   const loginForm = document.getElementById('loginForm');
   const registerForm = document.getElementById('registerForm');
+
+  const streakInfo = getStreakStatus(user);
+  const streakEl = document.getElementById('userStreak');
+  if (streakEl) streakEl.textContent = streakInfo.activeStreak;
 
   tabLogin.onclick = () => {
     tabLogin.classList.add('active');
@@ -1235,12 +1255,80 @@ function renderHallOfFame() {
   `;
 }
 
+window.openDailyStreakModal = () => {
+  const user = getCurrentUser();
+  if (!user) return openAuthModal();
+
+  const { activeStreak, claimedToday, nextReward } = getStreakStatus(user);
+  const rewards = [5, 8, 11, 14, 17, 20, 25];
+  const cycleProgress = activeStreak % 7 === 0 && activeStreak > 0 ? 7 : activeStreak % 7;
+
+  openModal(`
+    <div style="padding-right:2rem;">
+      <span class="badge">🔥 Щоденний ритуал</span>
+      <h2 style="margin-top:0.5rem;">Вогонь Творчості</h2>
+      <p class="subtitle">Заходьте щодня, щоб підтримувати полум’я та отримувати монети Авену.</p>
+    </div>
+
+    <div class="stats-row" style="margin:1rem 0 0.5rem;">
+      <div class="stat-box"><strong>${activeStreak} 🔥</strong>Днів поспіль</div>
+      <div class="stat-box"><strong>+${nextReward} 🪙</strong>${claimedToday ? 'Отримано сьогодні' : 'Сьогоднішній дар'}</div>
+    </div>
+
+    <div class="streak-days-grid">
+      ${rewards.map((val, idx) => {
+        const dayNum = idx + 1;
+        const isDone = dayNum <= cycleProgress;
+        const isNext = !claimedToday && dayNum === (cycleProgress === 7 ? 1 : cycleProgress + 1);
+        return `
+          <div class="streak-day-box ${isDone ? 'done' : ''} ${isNext ? 'next' : ''}">
+            <div>День ${dayNum}</div>
+            <strong>+${val} 🪙</strong>
+          </div>
+        `;
+      }).join('')}
+    </div>
+
+    ${claimedToday
+      ? `<button type="button" class="btn" disabled style="width:100%; justify-content:center;">✅ Сьогоднішній дар уже забрано — повертайтесь завтра</button>`
+      : `<button type="button" id="claimStreakSubmitBtn" class="btn btn-primary" style="width:100%; justify-content:center;">🔥 Підтримати вогонь і забрати +${nextReward} 🪙</button>`}
+  `);
+
+  const claimBtn = document.getElementById('claimStreakSubmitBtn');
+  if (claimBtn) {
+    claimBtn.onclick = async () => {
+      claimBtn.disabled = true;
+      try {
+        const res = await TaliesinAPI.claimDailyStreak();
+        await refresh();
+        openDailyStreakModal();
+        alert(`Полум’я горить ${res.streak} дн. поспіль! Отримано +${res.reward} 🪙.`);
+      } catch (err) {
+        claimBtn.disabled = false;
+        alert(err.message);
+      }
+    };
+  }
+};
+
+document.getElementById('streakBtn')?.addEventListener('click', openDailyStreakModal);
+
 function renderProfile() {
   const user = getCurrentUser();
   if (!user) return navigateTo('articles');
 
   const myArticles = state.articles.filter(a => a.author_id === user.id || a.author === user.name);
   const myBooks = state.books.filter(b => b.author_id === user.id || b.author === user.name);
+
+  const streakInfo = getStreakStatus(user);
+  document.getElementById('profileSummary').innerHTML = `
+    <div class="stat-box"><strong>${user.coins} 🪙</strong>Поточний баланс</div>
+    <div class="stat-box" style="cursor:pointer;" onclick="openDailyStreakModal()" title="Відкрити ритуал Вогнища">
+      <strong>${streakInfo.activeStreak} 🔥</strong>Серія днів (${streakInfo.claimedToday ? 'забрано' : `+${streakInfo.nextReward} 🪙`})
+    </div>
+    <div class="stat-box"><strong>${unlockedItems.length}</strong>Куплених / відкритих глав</div>
+    <div class="stat-box"><strong>${myArticles.length + myBooks.length}</strong>Створених творів</div>
+  `;
 
   const unlockedItems = [];
   state.books.forEach(book => {
