@@ -455,7 +455,7 @@ h1, h2, h3, .brand-name {
   top: 0;
   float: right;
   z-index: 10;
-  background: var(--bg-card);
+  background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 50%;
   width: 34px;
