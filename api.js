@@ -2,24 +2,17 @@ const SUPABASE_URL = 'https://pxvydxpbrdpjkbroonwv.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sFE27f6RWBwS5rpNaOZszw_J6Nv7r_w';
 
 const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-const SESSION_KEY = 'taliesin_current_user_id';
-
-function buildHistoryItem(label, delta) {
-  return {
-    id: 'tx_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
-    label,
-    delta,
-    date: new Date().toLocaleDateString('uk-UA')
-  };
-}
 
 window.TaliesinAPI = {
   async getState() {
-    const [usersRes, articlesRes, booksRes] = await Promise.all([
+    const [{ data: sessionData }, usersRes, articlesRes, booksRes] = await Promise.all([
+      sbClient.auth.getSession(),
       sbClient.from('profiles').select('*'),
       sbClient.from('articles').select('*').order('created_at', { ascending: false }),
       sbClient.from('books').select('*').order('created_at', { ascending: false })
     ]);
+
+    const currentUserId = sessionData?.session?.user?.id || null;
 
     const users = (usersRes.data || []).map(u => ({
       ...u,
@@ -29,89 +22,69 @@ window.TaliesinAPI = {
 
     return {
       users,
-      currentUserId: localStorage.getItem(SESSION_KEY) || null,
+      currentUserId,
       articles: articlesRes.data || [],
       books: booksRes.data || []
     };
   },
 
-  async login(email, name, role = 'user') {
+  async register({ name, email, password }) {
     const cleanEmail = email.trim().toLowerCase();
-    let { data: user } = await sbClient
-      .from('profiles')
-      .select('*')
-      .eq('email', cleanEmail)
-      .maybeSingle();
+    const cleanName = name.trim();
+    if (password.length < 6) throw new Error('Пароль має містити щонайменше 6 символів');
 
-    if (!user) {
-      const newUser = {
-        id: 'u_' + Date.now(),
-        name: name.trim() || cleanEmail.split('@')[0],
-        email: cleanEmail,
-        role,
-        coins: 30,
-        unlocked_chapters: [],
-        coin_history: [buildHistoryItem('Вітальний дар гільдії', +30)]
-      };
-      const { data, error } = await sbClient.from('profiles').insert(newUser).select().single();
-      if (error) throw new Error(error.message);
-      user = data;
-    }
+    const { data, error } = await sbClient.auth.signUp({
+      email: cleanEmail,
+      password,
+      options: {
+        data: { name: cleanName || cleanEmail.split('@')[0] }
+      }
+    });
 
-    localStorage.setItem(SESSION_KEY, user.id);
-    return {
-      ...user,
-      unlockedChapters: user.unlocked_chapters || [],
-      coinHistory: user.coin_history || []
-    };
+    if (error) throw new Error(error.message);
+    return data.user;
   },
 
-  async switchDemoRole(role) {
-    const email = role === 'admin' ? 'bard@taliesin.wales' : 'reader@taliesin.wales';
-    const name = role === 'admin' ? 'Талієсін Бард' : 'Керідвен';
-    return this.login(email, name, role);
+  async login({ email, password }) {
+    const { data, error } = await sbClient.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password
+    });
+
+    if (error) throw new Error('Невірний email або пароль');
+    return data.user;
   },
 
   async logout() {
-    localStorage.removeItem(SESSION_KEY);
+    await sbClient.auth.signOut();
   },
 
   async updateProfileName(newName) {
-    const userId = localStorage.getItem(SESSION_KEY);
-    if (!userId) throw new Error('Потрібна авторизація');
+    const { data: { user } } = await sbClient.auth.getUser();
+    if (!user) throw new Error('Потрібна авторизація');
     const cleanName = newName.trim();
     if (!cleanName) throw new Error('Введіть коректне ім’я');
 
-    const { error } = await sbClient.from('profiles').update({ name: cleanName }).eq('id', userId);
+    const { error } = await sbClient.from('profiles').update({ name: cleanName }).eq('id', user.id);
     if (error) throw new Error(error.message);
   },
 
-  async addCoins(amount) {
-    const userId = localStorage.getItem(SESSION_KEY);
-    if (!userId) throw new Error('Потрібна авторизація');
-
-    const { data: user } = await sbClient.from('profiles').select('coins, coin_history').eq('id', userId).single();
-    const updatedCoins = (user?.coins || 0) + amount;
-    const updatedHistory = [buildHistoryItem('Перегляд послання меценатів', +amount), ...(user?.coin_history || [])].slice(0, 30);
-
-    const { error } = await sbClient.from('profiles').update({
-      coins: updatedCoins,
-      coin_history: updatedHistory
-    }).eq('id', userId);
-
+  async addCoins(amount = 15) {
+    const { data, error } = await sbClient.rpc('claim_ad_reward', { reward_amount: amount });
     if (error) throw new Error(error.message);
-    return updatedCoins;
+    return data;
   },
 
   async createArticle({ title, category, content }) {
-    const userId = localStorage.getItem(SESSION_KEY);
-    if (!userId) throw new Error('Увійдіть, щоб публікувати статті');
+    const { data: { user } } = await sbClient.auth.getUser();
+    if (!user) throw new Error('Увійдіть, щоб публікувати статті');
 
-    const { data: user } = await sbClient.from('profiles').select('name').eq('id', userId).single();
+    const { data: profile } = await sbClient.from('profiles').select('name').eq('id', user.id).single();
     const { data, error } = await sbClient.from('articles').insert({
       title,
       category,
-      author: user.name,
+      author: profile.name,
+      author_id: user.id,
       date: new Date().toISOString().slice(0, 10),
       likes: 1,
       content,
@@ -123,9 +96,6 @@ window.TaliesinAPI = {
   },
 
   async updateArticle(articleId, { title, category, content }) {
-    const userId = localStorage.getItem(SESSION_KEY);
-    if (!userId) throw new Error('Потрібна авторизація');
-
     const { error } = await sbClient.from('articles').update({
       title: title.trim(),
       category,
@@ -142,68 +112,39 @@ window.TaliesinAPI = {
   },
 
   async addComment(articleId, text) {
-    const userId = localStorage.getItem(SESSION_KEY);
-    if (!userId) throw new Error('Увійдіть, щоб залишати коментарі');
+    const { data: { user } } = await sbClient.auth.getUser();
+    if (!user) throw new Error('Увійдіть, щоб залишати коментарі');
 
-    const [{ data: user }, { data: art }] = await Promise.all([
-      sbClient.from('profiles').select('name').eq('id', userId).single(),
+    const [{ data: profile }, { data: art }] = await Promise.all([
+      sbClient.from('profiles').select('name').eq('id', user.id).single(),
       sbClient.from('articles').select('comments').eq('id', articleId).single()
     ]);
 
-    const nextComments = [...(art.comments || []), { id: 'cm_' + Date.now(), author: user.name, text }];
+    const nextComments = [...(art.comments || []), { id: 'cm_' + Date.now(), author: profile.name, text }];
     await sbClient.from('articles').update({ comments: nextComments }).eq('id', articleId);
   },
 
   async deleteArticle(articleId) {
-    await sbClient.from('articles').delete().eq('id', articleId);
+    const { error } = await sbClient.from('articles').delete().eq('id', articleId);
+    if (error) throw new Error(error.message);
   },
 
   async unlockChapter(chapterId, price, chapterTitle = 'Глава книги', authorId = null) {
-    const userId = localStorage.getItem(SESSION_KEY);
-    if (!userId) throw new Error('Увійдіть у профіль для читання платних глав');
-
-    const { data: user } = await sbClient.from('profiles').select('*').eq('id', userId).single();
-    const unlocked = user.unlocked_chapters || [];
-
-    if (unlocked.includes(chapterId)) return true;
-    if (user.coins < price) throw new Error('Недостатньо монет! Перегляньте рекламу, щоб поповнити баланс.');
-
-    const nextHistory = [
-      buildHistoryItem(`Розблоковано: «${chapterTitle}»`, -price),
-      ...(user.coin_history || [])
-    ].slice(0, 30);
-
-    const { error } = await sbClient.from('profiles').update({
-      coins: user.coins - price,
-      unlocked_chapters: [...unlocked, chapterId],
-      coin_history: nextHistory
-    }).eq('id', userId);
-
+    const { data, error } = await sbClient.rpc('purchase_chapter', {
+      p_chapter_id: chapterId,
+      p_price: Number(price),
+      p_chapter_title: chapterTitle,
+      p_author_id: authorId || ''
+    });
     if (error) throw new Error(error.message);
-
-    if (authorId && authorId !== userId) {
-      const royalty = Math.max(1, Math.ceil(price * 0.8));
-      const { data: author } = await sbClient.from('profiles').select('coins, coin_history').eq('id', authorId).maybeSingle();
-      if (author) {
-        const authorHistory = [
-          buildHistoryItem(`Роялті за главу «${chapterTitle}»`, +royalty),
-          ...(author.coin_history || [])
-        ].slice(0, 30);
-        await sbClient.from('profiles').update({
-          coins: (author.coins || 0) + royalty,
-          coin_history: authorHistory
-        }).eq('id', authorId);
-      }
-    }
-
-    return true;
+    return data;
   },
 
   async addChapter({ bookId, newBookTitle, newBookDesc, chapTitle, price, content }) {
-    const userId = localStorage.getItem(SESSION_KEY);
-    if (!userId) throw new Error('Потрібна авторизація');
+    const { data: { user } } = await sbClient.auth.getUser();
+    if (!user) throw new Error('Потрібна авторизація');
 
-    const { data: user } = await sbClient.from('profiles').select('*').eq('id', userId).single();
+    const { data: profile } = await sbClient.from('profiles').select('*').eq('id', user.id).single();
     const newChap = {
       id: 'c_' + Date.now(),
       title: chapTitle,
@@ -211,47 +152,37 @@ window.TaliesinAPI = {
       content
     };
 
-    let targetBookId = bookId;
-
-    if (!targetBookId && newBookTitle.trim()) {
-      const { data: createdBook, error } = await sbClient.from('books').insert({
+    if (!bookId && newBookTitle.trim()) {
+      const { error } = await sbClient.from('books').insert({
         title: newBookTitle.trim(),
-        author: user.name,
-        author_id: userId,
+        author: profile.name,
+        author_id: user.id,
         description: newBookDesc.trim() || 'Авторська книга порталу tali_e_sin',
         chapters: [newChap]
-      }).select().single();
-
+      });
       if (error) throw new Error(error.message);
-      targetBookId = createdBook.id;
-    } else if (targetBookId) {
-      const { data: existingBook } = await sbClient.from('books').select('chapters').eq('id', targetBookId).single();
+    } else if (bookId) {
+      const { data: existingBook } = await sbClient.from('books').select('chapters').eq('id', bookId).single();
       const updatedChapters = [...(existingBook.chapters || []), newChap];
-      await sbClient.from('books').update({ chapters: updatedChapters }).eq('id', targetBookId);
+      const { error } = await sbClient.from('books').update({ chapters: updatedChapters }).eq('id', bookId);
+      if (error) throw new Error(error.message);
     } else {
       throw new Error('Оберіть книгу або введіть назву нової');
     }
 
-    const unlocked = [...(user.unlocked_chapters || []), newChap.id];
-    await sbClient.from('profiles').update({ unlocked_chapters: unlocked }).eq('id', userId);
+    const unlocked = [...(profile.unlocked_chapters || []), newChap.id];
+    await sbClient.from('profiles').update({ unlocked_chapters: unlocked }).eq('id', user.id);
   },
 
   async updateBookInfo(bookId, { title, description }) {
-    const userId = localStorage.getItem(SESSION_KEY);
-    if (!userId) throw new Error('Потрібна авторизація');
-
     const { error } = await sbClient.from('books').update({
       title: title.trim(),
       description: description.trim()
     }).eq('id', bookId);
-
     if (error) throw new Error(error.message);
   },
 
   async updateChapter(bookId, chapterId, { title, price, content }) {
-    const userId = localStorage.getItem(SESSION_KEY);
-    if (!userId) throw new Error('Потрібна авторизація');
-
     const { data: book, error: fetchErr } = await sbClient.from('books').select('chapters').eq('id', bookId).single();
     if (fetchErr || !book) throw new Error('Книгу не знайдено');
 
@@ -265,33 +196,21 @@ window.TaliesinAPI = {
     if (error) throw new Error(error.message);
   },
 
-  // --- Методи для Адмін-панелі ---
   async adminAdjustUserCoins(targetUserId, delta) {
     const numericDelta = Number(delta);
     if (!numericDelta || Number.isNaN(numericDelta)) throw new Error('Вкажіть ненульову кількість монет');
-
-    const { data: target, error: fetchErr } = await sbClient
-      .from('profiles')
-      .select('coins, coin_history')
-      .eq('id', targetUserId)
-      .single();
-
-    if (fetchErr || !target) throw new Error('Користувача не знайдено');
-
-    const nextCoins = Math.max(0, (target.coins || 0) + numericDelta);
-    const label = numericDelta > 0 ? 'Дарунок Хранителя' : 'Стягнення Хранителя';
-    const nextHistory = [buildHistoryItem(label, numericDelta), ...(target.coin_history || [])].slice(0, 30);
-
-    const { error } = await sbClient.from('profiles').update({
-      coins: nextCoins,
-      coin_history: nextHistory
-    }).eq('id', targetUserId);
-
+    const { error } = await sbClient.rpc('admin_adjust_coins', {
+      p_target_id: targetUserId,
+      p_delta: numericDelta
+    });
     if (error) throw new Error(error.message);
   },
 
   async adminToggleUserRole(targetUserId, nextRole) {
-    const { error } = await sbClient.from('profiles').update({ role: nextRole }).eq('id', targetUserId);
+    const { error } = await sbClient.rpc('admin_set_role', {
+      p_target_id: targetUserId,
+      p_role: nextRole
+    });
     if (error) throw new Error(error.message);
   },
 
@@ -303,7 +222,8 @@ window.TaliesinAPI = {
   },
 
   async adminDeleteBook(bookId) {
-    await sbClient.from('books').delete().eq('id', bookId);
+    const { error } = await sbClient.from('books').delete().eq('id', bookId);
+    if (error) throw new Error(error.message);
   },
 
   async adminDeleteChapter(bookId, chapterId) {
