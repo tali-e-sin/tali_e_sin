@@ -310,3 +310,32 @@ h1, h2, h3, .brand-name {
 }
 
 .hidden { display: none !important; }
+
+/* Літературне форматування тексту при читанні */
+.reading-text p {
+  margin: 0 0 1.15em;
+  text-indent: 1.5em;
+  line-height: 1.8;
+}
+
+.reading-text p:first-child {
+  text-indent: 0;
+}
+
+.reading-text blockquote {
+  margin: 1.2em 0;
+  padding: 0.75rem 1.1rem;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-subtle);
+  border-radius: 0 10px 10px 0;
+  font-style: italic;
+}
+
+.scene-divider {
+  text-align: center;
+  margin: 1.6em 0;
+  letter-spacing: 0.45em;
+  color: var(--accent);
+  font-weight: 600;
+  user-select: none;
+}
