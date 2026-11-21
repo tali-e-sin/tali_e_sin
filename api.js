@@ -3,6 +3,15 @@ const SUPABASE_ANON_KEY = 'sb_publishable_sFE27f6RWBwS5rpNaOZszw_J6Nv7r_w';
 
 const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+function getGuestId() {
+  let gid = localStorage.getItem('taliesin_guest_id');
+  if (!gid) {
+    gid = 'g_' + Math.random().toString(36).slice(2, 10) + '_' + Date.now().toString(36);
+    localStorage.setItem('taliesin_guest_id', gid);
+  }
+  return gid;
+}
+
 window.TaliesinAPI = {
   async getState() {
     const [{ data: sessionData }, usersRes, articlesRes, booksRes] = await Promise.all([
@@ -42,6 +51,7 @@ window.TaliesinAPI = {
     });
 
     if (error) throw new Error(error.message);
+    await sbClient.rpc('claim_guest_logs', { p_guest_id: getGuestId() });
     return data.user;
   },
 
@@ -52,9 +62,10 @@ window.TaliesinAPI = {
     });
 
     if (error) throw new Error('Невірний email або пароль');
+    await sbClient.rpc('claim_guest_logs', { p_guest_id: getGuestId() });
     return data.user;
   },
-
+  
   async logout() {
     await sbClient.auth.signOut();
   },
@@ -201,7 +212,8 @@ window.TaliesinAPI = {
     if (!numericDelta || Number.isNaN(numericDelta)) throw new Error('Вкажіть ненульову кількість монет');
     const { data, error } = await sbClient.rpc('admin_adjust_coins', {
       p_target_id: targetUserId,
-      p_delta: numericDelta
+      p_delta: numericDelta,
+      p_guest_id: getGuestId()
     });
     if (error) throw new Error(error.message);
     if (data === 'DENIED') throw new Error('Доступ заборонено (інцидент зафіксовано)');
@@ -210,7 +222,8 @@ window.TaliesinAPI = {
   async adminToggleUserRole(targetUserId, nextRole) {
     const { data, error } = await sbClient.rpc('admin_set_role', {
       p_target_id: targetUserId,
-      p_role: nextRole
+      p_role: nextRole,
+      p_guest_id: getGuestId()
     });
     if (error) throw new Error(error.message);
     if (data === 'DENIED') throw new Error('Доступ заборонено (інцидент зафіксовано)');
