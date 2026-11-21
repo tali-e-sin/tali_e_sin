@@ -25,6 +25,7 @@ window.TaliesinAPI = {
 
     const users = (usersRes.data || []).map(u => ({
       ...u,
+      bio: u.bio || '',
       unlockedChapters: u.unlocked_chapters || [],
       coinHistory: u.coin_history || [],
       favoriteBooks: Array.isArray(u.favorite_books) ? u.favorite_books : [],
@@ -80,6 +81,21 @@ window.TaliesinAPI = {
     if (!cleanName) throw new Error('Введіть коректне ім’я');
 
     const { error } = await sbClient.from('profiles').update({ name: cleanName }).eq('id', user.id);
+    if (error) throw new Error(error.message);
+  },
+
+  async updateProfileInfo({ name, bio }) {
+    const { data: { user } } = await sbClient.auth.getUser();
+    if (!user) throw new Error('Потрібна авторизація');
+    const cleanName = name.trim();
+    if (!cleanName) throw new Error('Введіть коректне ім’я');
+
+    const cleanBio = String(bio || '').trim().slice(0, 240);
+    const { error } = await sbClient
+      .from('profiles')
+      .update({ name: cleanName, bio: cleanBio })
+      .eq('id', user.id);
+
     if (error) throw new Error(error.message);
   },
 
