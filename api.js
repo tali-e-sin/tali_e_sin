@@ -199,19 +199,34 @@ window.TaliesinAPI = {
   async adminAdjustUserCoins(targetUserId, delta) {
     const numericDelta = Number(delta);
     if (!numericDelta || Number.isNaN(numericDelta)) throw new Error('Вкажіть ненульову кількість монет');
-    const { error } = await sbClient.rpc('admin_adjust_coins', {
+    const { data, error } = await sbClient.rpc('admin_adjust_coins', {
       p_target_id: targetUserId,
       p_delta: numericDelta
     });
     if (error) throw new Error(error.message);
+    if (data === 'DENIED') throw new Error('Доступ заборонено (інцидент зафіксовано)');
   },
 
   async adminToggleUserRole(targetUserId, nextRole) {
-    const { error } = await sbClient.rpc('admin_set_role', {
+    const { data, error } = await sbClient.rpc('admin_set_role', {
       p_target_id: targetUserId,
       p_role: nextRole
     });
     if (error) throw new Error(error.message);
+    if (data === 'DENIED') throw new Error('Доступ заборонено (інцидент зафіксовано)');
+  },
+
+  async getSecurityLogs() {
+    const { data } = await sbClient
+      .from('security_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(20);
+    return data || [];
+  },
+
+  async clearSecurityLogs() {
+    await sbClient.from('security_logs').delete().neq('id', 0);
   },
 
   async adminDeleteComment(articleId, commentId) {
