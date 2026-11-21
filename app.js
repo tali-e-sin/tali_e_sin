@@ -421,6 +421,7 @@ function navigateTo(target) {
   }
   document.querySelectorAll('.nav-link').forEach(n => n.classList.toggle('active', n.dataset.nav === target));
   document.querySelectorAll('.view-section').forEach(sec => sec.classList.toggle('hidden', sec.id !== `view-${target}`));
+  if (target === 'hall') renderHallOfFame();
   if (target === 'write') populateBookSelect();
   if (target === 'profile') renderProfile();
   if (target === 'admin') renderAdmin();
@@ -1094,6 +1095,146 @@ window.openEditChapterModal = (bookId, chapterId) => {
 };
 
 // --- Особистий кабінет (Профіль) ---
+function renderHallOfFame() {
+  const container = document.getElementById('hallOfFameContent');
+  if (!container || !state) return;
+
+  const medals = ['🥇', '🥈', '🥉'];
+
+  // 1. Рейтинг бардів (за вподобаннями статей, відгуками на книги та кількістю творів)
+  const bardStats = state.users.map(u => {
+    const uArticles = state.articles.filter(a => a.author_id === u.id || a.author === u.name);
+    const uBooks = state.books.filter(b => b.author_id === u.id || b.author === u.name);
+
+    const likes = uArticles.reduce((sum, a) => {
+      const likedLen = Array.isArray(a.liked_by) ? a.liked_by.length : 0;
+      return sum + (likedLen || a.likes || 0);
+    }, 0);
+
+    const bookStars = uBooks.reduce((sum, b) => {
+      const info = getBookRatingStats(b);
+      return sum + (info.hasRatings ? Number(info.avg) : 0);
+    }, 0);
+
+    const worksCount = uArticles.length + uBooks.length;
+    const score = likes * 2 + Math.round(bookStars * 3) + worksCount * 3;
+
+    return {
+      user: u,
+      likes,
+      worksCount,
+      score
+    };
+  })
+  .filter(item => item.worksCount > 0 || item.likes > 0)
+  .sort((a, b) => b.score - a.score)
+  .slice(0, 5);
+
+  // 2. Топ книг за оцінками читачів
+  const topBooks = [...state.books]
+    .map(b => ({ book: b, rating: getBookRatingStats(b) }))
+    .sort((a, b) => {
+      const avgDiff = (b.rating.hasRatings ? Number(b.rating.avg) : 0) - (a.rating.hasRatings ? Number(a.rating.avg) : 0);
+      if (avgDiff !== 0) return avgDiff;
+      return b.rating.count - a.rating.count;
+    })
+    .slice(0, 5);
+
+  // 3. Топ статей за вподобаннями та коментарями
+  const topArticles = [...state.articles]
+    .map(a => {
+      const likedLen = Array.isArray(a.liked_by) ? a.liked_by.length : 0;
+      const likes = likedLen || a.likes || 0;
+      const comments = (a.comments || []).length;
+      return { art: a, likes, comments };
+    })
+    .sort((a, b) => (b.likes * 2 + b.comments) - (a.likes * 2 + a.comments))
+    .slice(0, 5);
+
+  const bardsHtml = bardStats.length
+    ? bardStats.map((item, idx) => `
+        <div class="hall-row">
+          <div style="display:flex; align-items:center; gap:0.55rem;">
+            <span class="hall-rank">${medals[idx] || `#${idx + 1}`}</span>
+            <div>
+              <div>${renderAuthorLink(item.user.name, item.user.id)}</div>
+              <small class="subtitle">Творів: ${item.worksCount} · Вподобань: ${item.likes} ❤️</small>
+            </div>
+          </div>
+          <span class="badge">${item.score} слави</span>
+        </div>
+      `).join('')
+    : '<p class="subtitle">Поки немає опублікованих творів для рейтингу.</p>';
+
+  const booksHtml = topBooks.length
+    ? topBooks.map(({ book, rating }, idx) => {
+        const firstChap = (book.chapters || [])[0];
+        return `
+          <div class="hall-row">
+            <div style="display:flex; align-items:center; gap:0.55rem;">
+              <span class="hall-rank">${medals[idx] || `#${idx + 1}`}</span>
+              <div>
+                <strong>${escapeHtml(book.title)}</strong>
+                <div class="subtitle" style="font-size:0.82rem;">
+                  ${renderAuthorLink(book.author, book.author_id)} · ${rating.hasRatings ? `⭐ ${rating.avg}` : '☆ Без оцінок'} · 💬 ${rating.count}
+                </div>
+              </div>
+            </div>
+            ${firstChap
+              ? `<button class="btn" style="padding:0.3rem 0.75rem; font-size:0.82rem;" onclick="readChapter('${book.id}', '${firstChap.id}')">Читати</button>`
+              : ''}
+          </div>
+        `;
+      }).join('')
+    : '<p class="subtitle">У бібліотеці поки немає книг.</p>';
+
+  const articlesHtml = topArticles.length
+    ? topArticles.map(({ art, likes, comments }, idx) => `
+        <div class="hall-row">
+          <div style="display:flex; align-items:center; gap:0.55rem;">
+            <span class="hall-rank">${medals[idx] || `#${idx + 1}`}</span>
+            <div>
+              <strong>${escapeHtml(art.title)}</strong>
+              <div class="subtitle" style="font-size:0.82rem;">
+                ${renderAuthorLink(art.author, art.author_id)} · ❤️ ${likes} · 💬 ${comments}
+              </div>
+            </div>
+          </div>
+          <button class="btn" style="padding:0.3rem 0.75rem; font-size:0.82rem;" onclick="openArticle('${art.id}')">Читати</button>
+        </div>
+      `).join('')
+    : '<p class="subtitle">Сувоїв поки немає.</p>';
+
+  container.innerHTML = `
+    <div class="card">
+      <div>
+        <span class="badge">🏆 Майстри слова</span>
+        <h3 style="margin-top:0.5rem;">Топ-барди спільноти</h3>
+        <p class="subtitle" style="margin-bottom:0.6rem;">Рейтинг за творами, оцінками книг та любов’ю читачів</p>
+        ${bardsHtml}
+      </div>
+    </div>
+
+    <div class="card">
+      <div>
+        <span class="badge">📚 Золота полиця</span>
+        <h3 style="margin-top:0.5rem;">Найкращі книги</h3>
+        <p class="subtitle" style="margin-bottom:0.6rem;">Сортування за середнім балом зірок та відгуками</p>
+        ${booksHtml}
+      </div>
+    </div>
+
+    <div class="card">
+      <div>
+        <span class="badge">🔥 У центрі уваги</span>
+        <h3 style="margin-top:0.5rem;">Найпопулярніші сувої</h3>
+        <p class="subtitle" style="margin-bottom:0.6rem;">Статті з найбільшою кількістю сердець та обговорень</p>
+        ${articlesHtml}
+      </div>
+    </div>
+  `;
+}
+
 function renderProfile() {
   const user = getCurrentUser();
   if (!user) return navigateTo('articles');
@@ -1461,6 +1602,9 @@ async function refresh() {
   }
   if (!document.getElementById('view-admin').classList.contains('hidden')) {
     await renderAdmin();
+  }
+  if (!document.getElementById('view-hall').classList.contains('hidden')) {
+    renderHallOfFame();
   }
 }
 
