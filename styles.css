@@ -107,10 +107,11 @@ h1, h2, h3, .brand-name {
   color: var(--accent);
 }
 
-.topbar-actions {
+.topbar-actions, .auth-area {
   display: flex;
   align-items: center;
   gap: 0.65rem;
+  flex-wrap: wrap;
 }
 
 .theme-btn, .coins-pill, .btn {
