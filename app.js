@@ -63,6 +63,14 @@ function canEditBook(book, user) {
   return user.role === 'admin' || book.author_id === user.id || book.author === user.name;
 }
 
+function getBookRatingStats(book) {
+  const reviews = Array.isArray(book?.reviews) ? book.reviews : [];
+  if (!reviews.length) return { avg: 0, count: 0, label: '☆ Без оцінок' };
+  const sum = reviews.reduce((acc, r) => acc + (Number(r.rating) || 0), 0);
+  const avg = (sum / reviews.length).toFixed(1);
+  return { avg, count: reviews.length, label: `⭐ ${avg} (${reviews.length})` };
+}
+
 function renderAuthorLink(authorName, authorId = '') {
   const safeName = escapeHtml(authorName || 'Невідомий бард');
   const safeId = escapeHtml(authorId || '');
@@ -593,13 +601,22 @@ function renderBooks() {
     const isFav = favorites.includes(book.id);
     const lastChapId = progress[book.id];
     const lastChap = (book.chapters || []).find(c => c.id === lastChapId);
+    const ratingInfo = getBookRatingStats(book);
 
     return `
       <div class="card">
         <div>
           <div class="meta-row" style="gap:0.4rem; flex-wrap:wrap;">
-            <span class="badge">Книга</span>
+            <div style="display:flex; gap:0.35rem; align-items:center; flex-wrap:wrap;">
+              <span class="badge">Книга</span>
+              <button class="badge" style="border:none; cursor:pointer;" onclick="openBookReviewsModal('${book.id}')" title="Переглянути або залишити відгук">
+                ${ratingInfo.label}
+              </button>
+            </div>
             <div style="display:flex; gap:0.35rem; flex-wrap:wrap;">
+              <button class="btn" style="padding:0.25rem 0.7rem; font-size:0.8rem;" onclick="openBookReviewsModal('${book.id}')">
+                💬 Відгуки
+              </button>
               <button class="btn ${isFav ? 'btn-primary' : ''}" style="padding:0.25rem 0.7rem; font-size:0.8rem;" onclick="toggleFavoriteBook('${book.id}')">
                 ${isFav ? '★ В обраному' : '🔖 В обране'}
               </button>
@@ -607,7 +624,8 @@ function renderBooks() {
             </div>
           </div>
           <h3 style="margin-top:0.5rem;">${book.title}</h3>
-          <p class="subtitle">Автор: ${renderAuthorLink(book.author, book.author_id)}</p>          <p>${book.description}</p>
+          <p class="subtitle">Автор: ${renderAuthorLink(book.author, book.author_id)}</p>
+          <p>${book.description}</p>
           ${lastChap ? `
             <div style="margin:0.6rem 0 0.8rem;">
               <button class="btn btn-primary" style="width:100%;" onclick="readChapter('${book.id}', '${lastChap.id}')">
@@ -638,6 +656,80 @@ function renderBooks() {
     `;
   }).join('');
 }
+
+window.openBookReviewsModal = (bookId) => {
+  const book = state.books.find(b => b.id === bookId);
+  if (!book) return;
+
+  const user = getCurrentUser();
+  const reviews = Array.isArray(book.reviews) ? book.reviews : [];
+  const ratingInfo = getBookRatingStats(book);
+  const myExisting = user ? reviews.find(r => r.user_id === user.id) : null;
+
+  const renderStars = (count) => '★'.repeat(count) + '☆'.repeat(5 - count);
+
+  openModal(`
+    <div style="padding-right:2rem;">
+      <span class="badge">${ratingInfo.label}</span>
+      <h2 style="margin-top:0.5rem;">${escapeHtml(book.title)}</h2>
+      <p class="subtitle">Автор: ${renderAuthorLink(book.author, book.author_id)}</p>
+      <p style="margin-top:0.5rem;">${escapeHtml(book.description || '')}</p>
+    </div>
+
+    <hr style="margin:1.2rem 0; border-color:var(--border);" />
+    <h3>${myExisting ? 'Оновити вашу оцінку та відгук' : 'Оцінити книгу'}</h3>
+    <form id="bookReviewForm" class="stack-form" style="margin:0.8rem 0 1.4rem;">
+      <select id="bookRatingSelect" class="input" required>
+        <option value="5">★★★★★ — 5 (Шедевр)</option>
+        <option value="4">★★★★☆ — 4 (Дуже добре)</option>
+        <option value="3">★★★☆☆ — 3 (Цікаво)</option>
+        <option value="2">★★☆☆☆ — 2 (Слабкувато)</option>
+        <option value="1">★☆☆☆☆ — 1 (Не сподобалось)</option>
+      </select>
+      <textarea id="bookReviewInput" class="input textarea" rows="3" maxlength="600" placeholder="Поділіться враженнями від книги (до 600 символів)..." required></textarea>
+      <button type="submit" class="btn btn-primary" style="align-self:flex-start;">
+        ${myExisting ? 'Оновити відгук' : 'Опублікувати відгук'}
+      </button>
+    </form>
+
+    <h3>Відгуки читачів (${reviews.length})</h3>
+    <div>
+      ${reviews.length
+        ? reviews.map(r => `
+            <div class="comment-box" style="margin-bottom:0.7rem;">
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-bottom:0.3rem;">
+                <strong>${renderAuthorLink(r.author, r.user_id)}</strong>
+                <span style="color:var(--accent); letter-spacing:1px;">${renderStars(Number(r.rating) || 5)} <small class="subtitle">· ${r.date || ''}</small></span>
+              </div>
+              <div>${escapeHtml(r.text)}</div>
+            </div>
+          `).join('')
+        : '<p class="subtitle">Поки немає жодного відгуку. Станьте першим, хто оцінить цю книгу!</p>'}
+    </div>
+  `);
+
+  if (myExisting) {
+    document.getElementById('bookRatingSelect').value = String(myExisting.rating);
+    document.getElementById('bookReviewInput').value = myExisting.text;
+  }
+
+  document.getElementById('bookReviewForm').onsubmit = async (e) => {
+    e.preventDefault();
+    if (!getCurrentUser()) return openAuthModal();
+
+    try {
+      await TaliesinAPI.addBookReview(
+        bookId,
+        document.getElementById('bookRatingSelect').value,
+        document.getElementById('bookReviewInput').value
+      );
+      await refresh();
+      openBookReviewsModal(bookId);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+};
 
 window.toggleFavoriteBook = async (bookId) => {
   const user = getCurrentUser();
