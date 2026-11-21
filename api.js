@@ -26,6 +26,8 @@ window.TaliesinAPI = {
     const users = (usersRes.data || []).map(u => ({
       ...u,
       bio: u.bio || '',
+      streakCount: Number(u.streak_count) || 0,
+      lastStreakDate: u.last_streak_date || null,
       unlockedChapters: u.unlocked_chapters || [],
       coinHistory: u.coin_history || [],
       favoriteBooks: Array.isArray(u.favorite_books) ? u.favorite_books : [],
@@ -187,6 +189,12 @@ window.TaliesinAPI = {
 
   async addCoins(amount = 15) {
     const { data, error } = await sbClient.rpc('claim_ad_reward', { reward_amount: amount });
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
+  async claimDailyStreak() {
+    const { data, error } = await sbClient.rpc('claim_daily_streak');
     if (error) throw new Error(error.message);
     return data;
   },
