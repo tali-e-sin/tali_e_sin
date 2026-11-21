@@ -453,28 +453,47 @@ document.getElementById('categoryFilter').addEventListener('change', renderArtic
 function renderBooks() {
   const user = getCurrentUser();
   const unlocked = user ? user.unlockedChapters : [];
+  const favorites = user ? (user.favoriteBooks || []) : [];
+  const progress = user ? (user.readingProgress || {}) : {};
   const list = document.getElementById('booksList');
 
   list.innerHTML = state.books.map(book => {
     const isAuthor = canEditBook(book, user);
+    const isFav = favorites.includes(book.id);
+    const lastChapId = progress[book.id];
+    const lastChap = (book.chapters || []).find(c => c.id === lastChapId);
+
     return `
       <div class="card">
         <div>
-          <div class="meta-row">
+          <div class="meta-row" style="gap:0.4rem; flex-wrap:wrap;">
             <span class="badge">Книга</span>
-            ${isAuthor ? `<button class="btn" style="padding:0.25rem 0.7rem; font-size:0.8rem;" onclick="openBookEditorModal('${book.id}')">✏️ Керувати книгою</button>` : ''}
+            <div style="display:flex; gap:0.35rem; flex-wrap:wrap;">
+              <button class="btn ${isFav ? 'btn-primary' : ''}" style="padding:0.25rem 0.7rem; font-size:0.8rem;" onclick="toggleFavoriteBook('${book.id}')">
+                ${isFav ? '★ В обраному' : '🔖 В обране'}
+              </button>
+              ${isAuthor ? `<button class="btn" style="padding:0.25rem 0.7rem; font-size:0.8rem;" onclick="openBookEditorModal('${book.id}')">✏️ Керувати</button>` : ''}
+            </div>
           </div>
           <h3 style="margin-top:0.5rem;">${book.title}</h3>
           <p class="subtitle">Автор: ${book.author}</p>
           <p>${book.description}</p>
+          ${lastChap ? `
+            <div style="margin:0.6rem 0 0.8rem;">
+              <button class="btn btn-primary" style="width:100%;" onclick="readChapter('${book.id}', '${lastChap.id}')">
+                ▶ Продовжити: ${lastChap.title}
+              </button>
+            </div>
+          ` : ''}
         </div>
         <div>
           <strong>Глави:</strong>
           ${(book.chapters || []).map(ch => {
             const isOpen = ch.price === 0 || unlocked.includes(ch.id) || isAuthor;
+            const isBookmarked = lastChapId === ch.id;
             return `
-              <div class="chapter-item">
-                <span>${isOpen ? '📖' : '🔒'} ${ch.title}</span>
+              <div class="chapter-item" style="${isBookmarked ? 'border-left: 3px solid var(--accent); padding-left: 0.6rem;' : ''}">
+                <span>${isBookmarked ? '🔖' : (isOpen ? '📖' : '🔒')} ${ch.title}</span>
                 <div style="display:flex; gap:0.35rem;">
                   <button class="btn ${isOpen ? '' : 'btn-primary'}" onclick="readChapter('${book.id}', '${ch.id}')">
                     ${isOpen ? 'Читати' : `${ch.price} 🪙`}
@@ -489,6 +508,17 @@ function renderBooks() {
     `;
   }).join('');
 }
+
+window.toggleFavoriteBook = async (bookId) => {
+  const user = getCurrentUser();
+  if (!user) return openAuthModal();
+  try {
+    await TaliesinAPI.toggleFavoriteBook(bookId);
+    await refresh();
+  } catch (err) {
+    alert(err.message);
+  }
+};
 
 window.readChapter = async (bookId, chapterId) => {
   const book = state.books.find(b => b.id === bookId);
@@ -511,6 +541,12 @@ window.readChapter = async (bookId, chapterId) => {
     const nextChap = chapIndex < chapters.length - 1 ? chapters[chapIndex + 1] : null;
     const nextIsOpen = nextChap && (nextChap.price === 0 || unlocked.includes(nextChap.id) || isAuthor);
     const minutes = estimateReadingMinutes(chap.content);
+
+    if (user) {
+      await TaliesinAPI.saveReadingBookmark(bookId, chapterId);
+      user.readingProgress = { ...(user.readingProgress || {}), [bookId]: chapterId };
+      renderBooks();
+    }
 
     openModal(`
       <div class="reading-progress-wrap"><div id="readingProgressBar" class="reading-progress-bar"></div></div>
@@ -653,6 +689,31 @@ function renderProfile() {
       }
     });
   });
+
+  const favBooks = state.books.filter(b => (user.favoriteBooks || []).includes(b.id));
+  const favContainer = document.getElementById('profileFavoritesList');
+  if (favContainer) {
+    favContainer.innerHTML = favBooks.length
+      ? favBooks.map(b => {
+          const lastChapId = (user.readingProgress || {})[b.id];
+          const targetChap = (b.chapters || []).find(c => c.id === lastChapId) || (b.chapters || [])[0];
+          return `
+            <div class="chapter-item" style="flex-wrap:wrap;">
+              <div>
+                <div style="font-size:0.95rem; font-weight:600;">★ ${b.title}</div>
+                <small class="subtitle">
+                  ${targetChap ? `Закладка: ${targetChap.title}` : 'Ще немає глав'}
+                </small>
+              </div>
+              <div style="display:flex; gap:0.35rem;">
+                ${targetChap ? `<button class="btn btn-primary" onclick="readChapter('${b.id}', '${targetChap.id}')">Читати</button>` : ''}
+                <button class="btn" onclick="toggleFavoriteBook('${b.id}')" title="Прибрати з обраного">✕</button>
+              </div>
+            </div>
+          `;
+        }).join('')
+      : '<p class="subtitle">Ваша книжкова полиця поки порожня. Натисніть «🔖 В обране» на будь-якій книзі.</p>';
+  }
 
   document.getElementById('profileSummary').innerHTML = `
     <div class="stat-box"><strong>${user.coins} 🪙</strong>Поточний баланс</div>
