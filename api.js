@@ -91,12 +91,16 @@ window.TaliesinAPI = {
     if (!cleanName) throw new Error('Введіть коректне ім’я');
 
     const cleanBio = String(bio || '').trim().slice(0, 240);
-    const { error } = await sbClient
+    const { data, error } = await sbClient
       .from('profiles')
       .update({ name: cleanName, bio: cleanBio })
-      .eq('id', user.id);
+      .eq('id', user.id)
+      .select();
 
     if (error) throw new Error(error.message);
+    if (!data || data.length === 0) {
+      throw new Error('База даних відхилила оновлення профілю (перевірте RLS політику UPDATE)');
+    }
   },
 
   async toggleFavoriteBook(bookId) {
