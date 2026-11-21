@@ -228,10 +228,19 @@ window.TaliesinAPI = {
     if (error) throw new Error(error.message);
   },
 
-  async addComment(articleId, text) {
+  async addComment(articleId, text, parentId = null) {
     const { error } = await sbClient.rpc('add_article_comment', {
       p_article_id: String(articleId),
-      p_text: String(text || '')
+      p_text: String(text || ''),
+      p_parent_id: parentId ? String(parentId) : null
+    });
+    if (error) throw new Error(error.message);
+  },
+
+  async toggleCommentLike(articleId, commentId) {
+    const { error } = await sbClient.rpc('toggle_article_comment_like', {
+      p_article_id: String(articleId),
+      p_comment_id: String(commentId)
     });
     if (error) throw new Error(error.message);
   },
@@ -313,6 +322,23 @@ window.TaliesinAPI = {
       p_book_id: String(bookId),
       p_rating: Number(rating),
       p_text: String(text || '')
+    });
+    if (error) throw new Error(error.message);
+  },
+
+  async addBookReviewReply(bookId, parentId, text) {
+    const { error } = await sbClient.rpc('add_book_review_reply', {
+      p_book_id: String(bookId),
+      p_parent_id: String(parentId),
+      p_text: String(text || '')
+    });
+    if (error) throw new Error(error.message);
+  },
+
+  async toggleBookReviewLike(bookId, reviewId) {
+    const { error } = await sbClient.rpc('toggle_book_review_like', {
+      p_book_id: String(bookId),
+      p_review_id: String(reviewId)
     });
     if (error) throw new Error(error.message);
   },
