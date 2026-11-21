@@ -90,19 +90,31 @@
         </div>
 
         <form id="articleForm" class="stack-form">
-          <h2>Опублікувати статтю</h2>
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+            <h2 style="margin:0;">Опублікувати статтю</h2>
+            <label class="btn" style="cursor:pointer;">
+              📂 Імпортувати з .txt / .md
+              <input type="file" id="artFileInput" accept=".txt,.md,text/plain,text/markdown" hidden />
+            </label>
+          </div>
           <input type="text" id="artTitle" class="input" placeholder="Заголовок статті" required />
           <select id="artCategory" class="input">
             <option value="Міфологія">Міфологія</option>
             <option value="Поезія">Поезія</option>
             <option value="Аналіз">Аналіз</option>
           </select>
-          <textarea id="artContent" class="input textarea" rows="8" placeholder="Текст вашого твору..." required></textarea>
+          <textarea id="artContent" class="input textarea" rows="8" placeholder="Текст вашого твору (підтримується **жирний**, *курсив*, > цитати та *** розділювачі)..." required></textarea>
           <button type="submit" class="btn btn-primary">Опублікувати статтю</button>
         </form>
 
         <form id="chapterForm" class="stack-form hidden">
-          <h2>Додати главу до книги</h2>
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+            <h2 style="margin:0;">Додати главу до книги</h2>
+            <label class="btn" style="cursor:pointer;">
+              📂 Імпортувати з .txt / .md
+              <input type="file" id="chapFileInput" accept=".txt,.md,text/plain,text/markdown" hidden />
+            </label>
+          </div>
           <select id="bookSelect" class="input"></select>
           <input type="text" id="newBookTitle" class="input" placeholder="Або назва нової книги (якщо створюєте з нуля)" />
           <input type="text" id="newBookDesc" class="input" placeholder="Короткий опис нової книги" />
