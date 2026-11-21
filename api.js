@@ -321,6 +321,14 @@ window.TaliesinAPI = {
     if (error) throw new Error(error.message);
   },
 
+  async updateBookCodex(bookId, codexArray) {
+    const { error } = await sbClient
+      .from('books')
+      .update({ codex: codexArray })
+      .eq('id', bookId);
+    if (error) throw new Error(error.message);
+  },
+
   async updateChapter(bookId, chapterId, { title, price, content }) {
     const { data: book, error: fetchErr } = await sbClient.from('books').select('chapters').eq('id', bookId).single();
     if (fetchErr || !book) throw new Error('Книгу не знайдено');
