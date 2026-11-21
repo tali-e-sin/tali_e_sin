@@ -838,6 +838,9 @@ function renderBooks() {
                 ${isFav ? '★ В обраному' : '🔖 В обране'}
               </button>
               ${isAuthor ? `<button class="btn" style="padding:0.25rem 0.7rem; font-size:0.8rem;" onclick="openBookEditorModal('${book.id}')">✏️ Керувати</button>` : ''}
+              ${(book.codex || []).length
+  ? `<button class="btn" style="padding:0.25rem 0.7rem; font-size:0.8rem;" onclick="openBookCodexModal('${book.id}')">📖 Кодекс (${book.codex.length})</button>`
+  : ''}
             </div>
           </div>
           <h3 style="margin-top:0.5rem;">${book.title}</h3>
@@ -995,6 +998,9 @@ window.readChapter = async (bookId, chapterId) => {
         ${book.author_id && (!user || user.id !== book.author_id)
   ? `<button type="button" class="btn" onclick="openTipModal('${escapeHtml(book.author_id)}', '${escapeHtml(book.author)}', '${escapeHtml(book.title)}')">🎁 Дарунок барду</button>`
   : ''}
+  ${(book.codex || []).length
+  ? `<button type="button" class="btn" onclick="openBookCodexModal('${book.id}', '${chap.id}')">📖 Кодекс (${book.codex.length})</button>`
+  : ''}
         ${isAuthor ? `<button class="btn" onclick="openEditChapterModal('${book.id}', '${chap.id}')">✏️ Редагувати главу</button>` : ''}
       </div>
       <h2 style="margin-top:0.6rem;">${chap.title}</h2>
@@ -1052,6 +1058,36 @@ window.openBookEditorModal = (bookId) => {
         </div>
       `).join('') || '<p class="subtitle">У цій книзі ще немає глав.</p>'}
     </div>
+
+    <hr style="margin:1.4rem 0; border-color:var(--border);" />
+    <h3>📖 Кодекс світу (${(book.codex || []).length})</h3>
+    <p class="subtitle" style="margin-bottom:0.75rem;">Додайте персонажів, локації чи терміни, щоб читачі могли відкривати їх прямо під час читання</p>
+
+    <form class="stack-form" onsubmit="addCodexEntry(event, '${book.id}')" style="margin-bottom:1rem;">
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+        <input type="text" id="codexNewTitle" class="input" placeholder="Назва (напр., Ейріс або Срібний Шпиль)" style="flex:1; min-width:180px;" required />
+        <select id="codexNewCategory" class="input">
+          <option value="Персонаж">Персонаж</option>
+          <option value="Локація">Локація</option>
+          <option value="Артефакт / Технологія">Артефакт / Технологія</option>
+          <option value="Термін / Подія">Термін / Подія</option>
+        </select>
+      </div>
+      <textarea id="codexNewDesc" class="input textarea" rows="2" maxlength="600" placeholder="Короткий опис або довідка для читача..." required></textarea>
+      <button type="submit" class="btn btn-primary" style="align-self:flex-start;">+ Додати в кодекс</button>
+    </form>
+
+    <div>
+      ${(book.codex || []).map(item => `
+        <div class="chapter-item" style="flex-wrap:wrap;">
+          <div>
+            <strong>${escapeHtml(item.title)}</strong> <span class="badge">${escapeHtml(item.category || '')}</span>
+            <div class="subtitle" style="font-size:0.84rem; margin-top:0.2rem;">${escapeHtml(item.description)}</div>
+          </div>
+          <button type="button" class="btn btn-danger" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="deleteCodexEntry('${book.id}', '${item.id}')">✕</button>
+        </div>
+      `).join('') || '<p class="subtitle">У кодексі цієї книги поки немає записів.</p>'}
+    </div>
   `);
 
   document.getElementById('editBookTitleInput').value = book.title;
@@ -1070,6 +1106,102 @@ window.openBookEditorModal = (bookId) => {
       alert(err.message);
     }
   };
+};
+
+window.openBookCodexModal = (bookId, returnChapterId = null) => {
+  const book = state.books.find(b => b.id === bookId);
+  if (!book) return;
+
+  const entries = Array.isArray(book.codex) ? book.codex : [];
+  const categories = ['Усі', 'Персонаж', 'Локація', 'Артефакт / Технологія', 'Термін / Подія'];
+
+  openModal(`
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; padding-right:2rem;">
+      <span class="badge">📖 Кодекс світу</span>
+      ${returnChapterId
+        ? `<button type="button" class="btn" onclick="readChapter('${book.id}', '${returnChapterId}')">← Повернутися до глави</button>`
+        : ''}
+    </div>
+    <h2 style="margin-top:0.5rem;">${escapeHtml(book.title)}</h2>
+    <p class="subtitle">Довідник персонажів, локацій та понять цього світу</p>
+
+    <div class="filters" style="margin:1rem 0;">
+      <input type="search" id="codexSearchInput" class="input" placeholder="Пошук у кодексі..." style="flex:1; min-width:180px;" />
+      <select id="codexCatFilter" class="input">
+        ${categories.map(c => `<option value="${c}">${c}</option>`).join('')}
+      </select>
+    </div>
+
+    <div id="codexEntriesContainer"></div>
+  `);
+
+  const renderEntries = () => {
+    const q = (document.getElementById('codexSearchInput')?.value || '').toLowerCase();
+    const cat = document.getElementById('codexCatFilter')?.value || 'Усі';
+    const box = document.getElementById('codexEntriesContainer');
+    if (!box) return;
+
+    const filtered = entries.filter(item =>
+      (cat === 'Усі' || item.category === cat) &&
+      (item.title.toLowerCase().includes(q) || item.description.toLowerCase().includes(q))
+    );
+
+    box.innerHTML = filtered.length
+      ? filtered.map(item => `
+          <div class="comment-box" style="margin-top:0.65rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.3rem;">
+              <strong style="font-size:1.02rem;">${escapeHtml(item.title)}</strong>
+              <span class="badge">${escapeHtml(item.category || 'Термін / Подія')}</span>
+            </div>
+            <div style="white-space:pre-line; color:var(--text-main);">${escapeHtml(item.description)}</div>
+          </div>
+        `).join('')
+      : '<p class="subtitle">Записів у кодексі за цим запитом поки немає.</p>';
+  };
+
+  document.getElementById('codexSearchInput')?.addEventListener('input', renderEntries);
+  document.getElementById('codexCatFilter')?.addEventListener('change', renderEntries);
+  renderEntries();
+};
+
+window.addCodexEntry = async (e, bookId) => {
+  e.preventDefault();
+  const book = state.books.find(b => b.id === bookId);
+  if (!book) return;
+
+  const title = document.getElementById('codexNewTitle').value.trim();
+  const category = document.getElementById('codexNewCategory').value;
+  const description = document.getElementById('codexNewDesc').value.trim();
+  if (!title || !description) return;
+
+  const current = Array.isArray(book.codex) ? book.codex : [];
+  const nextCodex = [
+    ...current,
+    { id: 'cx_' + Date.now(), title, category, description }
+  ];
+
+  try {
+    await TaliesinAPI.updateBookCodex(bookId, nextCodex);
+    await refresh();
+    openBookEditorModal(bookId);
+  } catch (err) {
+    alert(err.message);
+  }
+};
+
+window.deleteCodexEntry = async (bookId, entryId) => {
+  const book = state.books.find(b => b.id === bookId);
+  if (!book) return;
+  const current = Array.isArray(book.codex) ? book.codex : [];
+  const nextCodex = current.filter(item => item.id !== entryId);
+
+  try {
+    await TaliesinAPI.updateBookCodex(bookId, nextCodex);
+    await refresh();
+    openBookEditorModal(bookId);
+  } catch (err) {
+    alert(err.message);
+  }
 };
 
 window.openEditChapterModal = (bookId, chapterId) => {
