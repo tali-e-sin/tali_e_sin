@@ -312,6 +312,15 @@ window.TaliesinAPI = {
     if (error) throw new Error(error.message);
   },
 
+  async addBookReview(bookId, rating, text) {
+    const { error } = await sbClient.rpc('add_book_review', {
+      p_book_id: String(bookId),
+      p_rating: Number(rating),
+      p_text: String(text || '')
+    });
+    if (error) throw new Error(error.message);
+  },
+
   async adminAdjustUserCoins(targetUserId, delta) {
     const numericDelta = Number(delta);
     if (!numericDelta || Number.isNaN(numericDelta)) throw new Error('Вкажіть ненульову кількість монет');
