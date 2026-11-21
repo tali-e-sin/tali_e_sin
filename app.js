@@ -197,6 +197,12 @@ window.openAuthorProfile = (authorId, authorName) => {
     ? escapeHtml(authorUser.bio)
     : 'Цей бард ще не залишив свого девізу, але його сувої говорять самі за себе.';
 
+  ${authorUser && (!getCurrentUser() || getCurrentUser().id !== authorUser.id)
+  ? `<div style="margin-top:0.8rem;">
+       <button type="button" class="btn btn-primary" onclick="openTipModal('${escapeHtml(authorUser.id)}', '${escapeHtml(displayName)}')">🎁 Надіслати дарунок барду</button>
+     </div>`
+  : ''}
+
   const authorArticles = state.articles.filter(a =>
     (authorId && a.author_id === authorId) || a.author === displayName
   );
@@ -256,6 +262,64 @@ window.openAuthorProfile = (authorId, authorName) => {
         : '<p class="subtitle">У цього автора поки немає статей.</p>'}
     </div>
   `);
+};
+
+window.openTipModal = (recipientId, recipientName, workTitle = '') => {
+  const user = getCurrentUser();
+  if (!user) return openAuthModal();
+
+  if (!recipientId) {
+    return alert('Цей твір створено без прив’язки до акаунту автора.');
+  }
+  if (user.id === recipientId) {
+    return alert('Ви є автором цього твору.');
+  }
+
+  const safeId = escapeHtml(recipientId);
+  const safeName = escapeHtml(recipientName || 'Бард');
+  const safeTitle = escapeHtml(workTitle || '');
+
+  openModal(`
+    <div style="padding-right:2rem;">
+      <span class="badge">🎁 Дарунок барду</span>
+      <h2 style="margin-top:0.5rem;">Віддячити: ${safeName}</h2>
+      ${safeTitle ? `<p class="subtitle">За твір: «${safeTitle}»</p>` : ''}
+      <p style="margin-top:0.5rem;">Ваш баланс: <strong>${user.coins} 🪙</strong></p>
+    </div>
+
+    <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin:1rem 0;">
+      <button type="button" class="btn tip-preset" onclick="document.getElementById('tipAmountInput').value = 5">+5 🪙</button>
+      <button type="button" class="btn tip-preset" onclick="document.getElementById('tipAmountInput').value = 15">+15 🪙</button>
+      <button type="button" class="btn tip-preset" onclick="document.getElementById('tipAmountInput').value = 50">+50 🪙</button>
+    </div>
+
+    <form id="tipBardForm" class="stack-form">
+      <label class="subtitle">Кількість монет</label>
+      <input type="number" id="tipAmountInput" class="input" min="1" max="1000" value="15" required />
+      <input type="text" id="tipNoteInput" class="input" maxlength="120" placeholder="Коротке слово вдячності автору (необов'язково)..." />
+      <button type="submit" class="btn btn-primary">Надіслати дарунок 🪙</button>
+    </form>
+  `);
+
+  document.getElementById('tipBardForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const amount = Number(document.getElementById('tipAmountInput').value);
+    const note = document.getElementById('tipNoteInput').value;
+
+    try {
+      await TaliesinAPI.tipBard({
+        recipientId,
+        amount,
+        workTitle,
+        note
+      });
+      await refresh();
+      closeModal();
+      alert(`Ви успішно надіслали ${amount} 🪙 барду ${recipientName}!`);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
 };
 
 function escapeHtml(str) {
@@ -633,6 +697,9 @@ window.openArticle = (id, scrollToComments = false) => {
         <button class="btn ${isFav ? 'btn-primary' : ''}" onclick="toggleFavoriteArticle('${art.id}').then(() => openArticle('${art.id}'))">
           ${isFav ? '★ В обраному' : '🔖 В обране'}
         </button>
+        ${art.author_id && (!user || user.id !== art.author_id)
+  ? `<button type="button" class="btn" onclick="openTipModal('${escapeHtml(art.author_id)}', '${escapeHtml(art.author)}', '${escapeHtml(art.title)}')">🎁 Дарунок</button>`
+  : ''}
         ${canEditArticle(art, user) ? `<button class="btn" onclick="openEditArticleModal('${art.id}')">✏️ Редагувати</button>` : ''}
       </div>
     </div>
@@ -905,6 +972,9 @@ window.readChapter = async (bookId, chapterId) => {
       <div class="reading-progress-wrap"><div id="readingProgressBar" class="reading-progress-bar"></div></div>
       <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; padding-right:2rem;">
         <span class="badge">${book.title} · Глава ${chapIndex + 1} з ${chapters.length}</span>
+        ${book.author_id && (!user || user.id !== book.author_id)
+  ? `<button type="button" class="btn" onclick="openTipModal('${escapeHtml(book.author_id)}', '${escapeHtml(book.author)}', '${escapeHtml(book.title)}')">🎁 Дарунок барду</button>`
+  : ''}
         ${isAuthor ? `<button class="btn" onclick="openEditChapterModal('${book.id}', '${chap.id}')">✏️ Редагувати главу</button>` : ''}
       </div>
       <h2 style="margin-top:0.6rem;">${chap.title}</h2>
