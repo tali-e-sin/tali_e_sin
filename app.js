@@ -612,34 +612,6 @@ function openAuthModal() {
 
   registerForm.onsubmit = async (e) => {
     e.preventDefault();
-    try {
-      await TaliesinAPI.register({
-        name: document.getElementById('regName').value,
-        email: document.getElementById('regEmail').value,
-        password: document.getElementById('regPassword').value
-      });
-      closeModal();
-      await refresh();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-}
-
-// Перевірка, чи вже існує email у списку користувачів (без урахування регістру та пробілів)
-function isEmailTaken(email, users = state?.users || []) {
-  const normalized = String(email || '').trim().toLowerCase();
-  if (!normalized) return false;
-  return users.some(u => String(u.email || '').trim().toLowerCase() === normalized);
-}
-
-// Отримання списку користувачів без дублікатів по email
-const uniqueUsers = deduplicateList(state.users, u => String(u.email || '').trim().toLowerCase());
-
-const uniqueBooks = deduplicateList(books, b => b.id);
-
-registerForm.onsubmit = async (e) => {
-    e.preventDefault();
     const email = document.getElementById('regEmail').value.trim();
     if (isEmailTaken(email)) {
       return alert('Бард із такою електронною поштою вже зареєстрований на порталі.');
@@ -656,6 +628,14 @@ registerForm.onsubmit = async (e) => {
       alert(err.message);
     }
   };
+}
+
+// Перевірка, чи вже існує email у списку користувачів (без урахування регістру та пробілів)
+function isEmailTaken(email, users = state?.users || []) {
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized) return false;
+  return users.some(u => String(u.email || '').trim().toLowerCase() === normalized);
+}
 
 // --- Симулятор реклами за монети ---
 document.getElementById('coinsBtn').addEventListener('click', () => {
