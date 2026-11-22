@@ -1162,16 +1162,7 @@ window.openBookEditorModal = (bookId) => {
           <option value="Термін / Подія">Термін / Подія</option>
         </select>
       </div>
-      <input type="text" id="codexNewUniverse" class="input" placeholder="Всесвіт або уточнення (напр., Загальний архетип або Хроніки Авену)" />
-      <textarea id="codexNewDesc" class="input textarea" rows="2" maxlength="800" placeholder="Опис, особливості або відмінності у вашому світі..." required></textarea>
-      <label class="subtitle" style="display:flex; align-items:center; gap:0.45rem; cursor:pointer;">
-        <input type="checkbox" id="codexIsShared" checked />
-        Зробити запис доступним іншим авторам у спільній енциклопедії
-      </label>
-      <button type="submit" class="btn btn-primary" style="align-self:flex-start;">+ Створити та додати до книги</button>
-    </form>
-
-    <input type="text" id="codexNewUniverse" class="input" maxlength="45" placeholder="Всесвіт або уточнення (напр., Загальний архетип, Хроніки Авену)" />
+      <input type="text" id="codexNewUniverse" class="input" maxlength="45" placeholder="Всесвіт або уточнення (напр., Загальний архетип, Хроніки Авену)" />
       <textarea id="codexNewDesc" class="input textarea" rows="2" maxlength="800" placeholder="Опис, особливості або відмінності у вашому світі..." required></textarea>
       <label class="subtitle" style="display:flex; align-items:center; gap:0.45rem; cursor:pointer;">
         <input type="checkbox" id="codexIsShared" checked />
@@ -1509,14 +1500,15 @@ window.openEditCodexModal = (entryId, returnBookId = null) => {
 
     <form id="editCodexForm" class="stack-form" style="margin-top:1rem;">
       <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-        <input type="text" id="editCodexUniverse" class="input" maxlength="45" placeholder="Всесвіт або уточнення..." />        <select id="editCodexCategory" class="input">
+        <input type="text" id="editCodexTitle" class="input" style="flex:1; min-width:180px;" required />
+        <select id="editCodexCategory" class="input">
           <option value="Персонаж">Персонаж</option>
           <option value="Локація">Локація</option>
           <option value="Артефакт / Технологія">Артефакт / Технологія</option>
           <option value="Термін / Подія">Термін / Подія</option>
         </select>
       </div>
-      <input type="text" id="editCodexUniverse" class="input" placeholder="Всесвіт або уточнення..." />
+      <input type="text" id="editCodexUniverse" class="input" maxlength="45" placeholder="Всесвіт або уточнення..." />
       <textarea id="editCodexDesc" class="input textarea" rows="5" maxlength="1500" required></textarea>
       <label class="subtitle" style="display:flex; align-items:center; gap:0.45rem; cursor:pointer;">
         <input type="checkbox" id="editCodexShared" />
