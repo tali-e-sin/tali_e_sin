@@ -1047,6 +1047,13 @@ window.openBookEditorModal = (bookId) => {
   const book = state.books.find(b => b.id === bookId);
   if (!book) return;
 
+  const user = getCurrentUser();
+  const bookCodex = getBookCodexEntries(book);
+  const linkedIds = bookCodex.map(e => e.id);
+  const availableShared = (state.codexEntries || []).filter(
+    e => (e.is_shared || e.author_id === user?.id) && !linkedIds.includes(e.id)
+  );
+
   openModal(`
     <h2>Керування книгою</h2>
     <form id="editBookInfoForm" class="stack-form" style="margin-top:0.8rem;">
@@ -1069,12 +1076,22 @@ window.openBookEditorModal = (bookId) => {
     </div>
 
     <hr style="margin:1.4rem 0; border-color:var(--border);" />
-    <h3>📖 Кодекс світу (${(book.codex || []).length})</h3>
-    <p class="subtitle" style="margin-bottom:0.75rem;">Додайте персонажів, локації чи терміни, щоб читачі могли відкривати їх прямо під час читання</p>
+    <h3>📖 Кодекс світу (${bookCodex.length})</h3>
+    <p class="subtitle" style="margin-bottom:0.75rem;">Підключайте спільні поняття всесвітів (напр., Ельфи, Астральна проєкція) або створюйте власні картки</p>
+
+    ${availableShared.length ? `
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1rem; padding:0.75rem; background:var(--bg-subtle); border-radius:12px;">
+        <select id="sharedCodexSelect" class="input" style="flex:1; min-width:200px;">
+          <option value="">-- Обрати зі спільної енциклопедії порталу --</option>
+          ${availableShared.map(e => `<option value="${e.id}">${escapeHtml(e.title)} (${escapeHtml(e.category)}${e.universe ? ` · ${escapeHtml(e.universe)}` : ''})</option>`).join('')}
+        </select>
+        <button type="button" class="btn" onclick="linkSharedCodexEntry('${book.id}')">+ Підключити до книги</button>
+      </div>
+    ` : ''}
 
     <form class="stack-form" onsubmit="addCodexEntry(event, '${book.id}')" style="margin-bottom:1rem;">
       <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-        <input type="text" id="codexNewTitle" class="input" placeholder="Назва (напр., Ейріс або Срібний Шпиль)" style="flex:1; min-width:180px;" required />
+        <input type="text" id="codexNewTitle" class="input" placeholder="Назва (напр., Ейріс або Ельфи)" style="flex:1; min-width:160px;" required />
         <select id="codexNewCategory" class="input">
           <option value="Персонаж">Персонаж</option>
           <option value="Локація">Локація</option>
@@ -1082,20 +1099,33 @@ window.openBookEditorModal = (bookId) => {
           <option value="Термін / Подія">Термін / Подія</option>
         </select>
       </div>
-      <textarea id="codexNewDesc" class="input textarea" rows="2" maxlength="600" placeholder="Короткий опис або довідка для читача..." required></textarea>
-      <button type="submit" class="btn btn-primary" style="align-self:flex-start;">+ Додати в кодекс</button>
+      <input type="text" id="codexNewUniverse" class="input" placeholder="Всесвіт або уточнення (напр., Загальний архетип або Хроніки Авену)" />
+      <textarea id="codexNewDesc" class="input textarea" rows="2" maxlength="800" placeholder="Опис, особливості або відмінності у вашому світі..." required></textarea>
+      <label class="subtitle" style="display:flex; align-items:center; gap:0.45rem; cursor:pointer;">
+        <input type="checkbox" id="codexIsShared" checked />
+        Зробити запис доступним іншим авторам у спільній енциклопедії
+      </label>
+      <button type="submit" class="btn btn-primary" style="align-self:flex-start;">+ Створити та додати до книги</button>
     </form>
 
     <div>
-      ${(book.codex || []).map(item => `
-        <div class="chapter-item" style="flex-wrap:wrap;">
-          <div>
-            <strong>${escapeHtml(item.title)}</strong> <span class="badge">${escapeHtml(item.category || '')}</span>
-            <div class="subtitle" style="font-size:0.84rem; margin-top:0.2rem;">${escapeHtml(item.description)}</div>
+      ${bookCodex.map(item => {
+        const canDeleteGlobal = user && (user.role === 'admin' || item.author_id === user.id);
+        return `
+          <div class="chapter-item" style="flex-wrap:wrap;">
+            <div>
+              <strong>${escapeHtml(item.title)}</strong>
+              <span class="badge">${escapeHtml(item.category || '')}</span>
+              ${item.universe ? `<small class="subtitle" style="margin-left:0.35rem;">· ${escapeHtml(item.universe)}</small>` : ''}
+              <div class="subtitle" style="font-size:0.84rem; margin-top:0.2rem;">${escapeHtml(item.description)}</div>
+            </div>
+            <div style="display:flex; gap:0.35rem;">
+              <button type="button" class="btn" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="unlinkCodexEntry('${book.id}', '${item.id}')" title="Відкріпити від цієї книги">Відкріпити</button>
+              ${canDeleteGlobal ? `<button type="button" class="btn btn-danger" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="deleteCodexEntry('${book.id}', '${item.id}')" title="Видалити назавжди">✕</button>` : ''}
+            </div>
           </div>
-          <button type="button" class="btn btn-danger" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="deleteCodexEntry('${book.id}', '${item.id}')">✕</button>
-        </div>
-      `).join('') || '<p class="subtitle">У кодексі цієї книги поки немає записів.</p>'}
+        `;
+      }).join('') || '<p class="subtitle">До цієї книги поки не підключено жодного запису Кодексу.</p>'}
     </div>
   `);
 
@@ -1116,7 +1146,6 @@ window.openBookEditorModal = (bookId) => {
     }
   };
 };
-
 window.openBookCodexModal = (bookId, returnChapterId = null) => {
   const book = state.books.find(b => b.id === bookId);
   if (!book) return;
@@ -1196,66 +1225,6 @@ window.addCodexEntry = async (e, bookId) => {
       universe: universe || book.title,
       isShared
     });
-
-    const user = getCurrentUser();
-  const bookCodex = getBookCodexEntries(book);
-  const linkedIds = bookCodex.map(e => e.id);
-  const availableShared = (state.codexEntries || []).filter(
-    e => (e.is_shared || e.author_id === user?.id) && !linkedIds.includes(e.id)
-  );
-    <hr style="margin:1.4rem 0; border-color:var(--border);" />
-    <h3>📖 Кодекс світу (${bookCodex.length})</h3>
-    <p class="subtitle" style="margin-bottom:0.75rem;">Підключайте спільні поняття всесвітів (напр., Ельфи, Астральна проєкція) або створюйте власні картки</p>
-
-    ${availableShared.length ? `
-      <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1rem; padding:0.75rem; background:var(--bg-subtle); border-radius:12px;">
-        <select id="sharedCodexSelect" class="input" style="flex:1; min-width:200px;">
-          <option value="">-- Обрати зі спільної енциклопедії порталу --</option>
-          ${availableShared.map(e => `<option value="${e.id}">${escapeHtml(e.title)} (${escapeHtml(e.category)}${e.universe ? ` · ${escapeHtml(e.universe)}` : ''})</option>`).join('')}
-        </select>
-        <button type="button" class="btn" onclick="linkSharedCodexEntry('${book.id}')">+ Підключити до книги</button>
-      </div>
-    ` : ''}
-
-    <form class="stack-form" onsubmit="addCodexEntry(event, '${book.id}')" style="margin-bottom:1rem;">
-      <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-        <input type="text" id="codexNewTitle" class="input" placeholder="Назва (напр., Ейріс або Ельфи)" style="flex:1; min-width:160px;" required />
-        <select id="codexNewCategory" class="input">
-          <option value="Персонаж">Персонаж</option>
-          <option value="Локація">Локація</option>
-          <option value="Артефакт / Технологія">Артефакт / Технологія</option>
-          <option value="Термін / Подія">Термін / Подія</option>
-        </select>
-      </div>
-      <input type="text" id="codexNewUniverse" class="input" placeholder="Всесвіт або уточнення (напр., Загальний архетип або Хроніки Авену)" />
-      <textarea id="codexNewDesc" class="input textarea" rows="2" maxlength="800" placeholder="Опис, особливості або відмінності у вашому світі..." required></textarea>
-      <label class="subtitle" style="display:flex; align-items:center; gap:0.45rem; cursor:pointer;">
-        <input type="checkbox" id="codexIsShared" checked />
-        Зробити запис доступним іншим авторам у спільній енциклопедії
-      </label>
-      <button type="submit" class="btn btn-primary" style="align-self:flex-start;">+ Створити та додати до книги</button>
-    </form>
-
-    <div>
-      ${bookCodex.map(item => {
-        const canDeleteGlobal = user && (user.role === 'admin' || item.author_id === user.id);
-        return `
-          <div class="chapter-item" style="flex-wrap:wrap;">
-            <div>
-              <strong>${escapeHtml(item.title)}</strong>
-              <span class="badge">${escapeHtml(item.category || '')}</span>
-              ${item.universe ? `<small class="subtitle" style="margin-left:0.35rem;">· ${escapeHtml(item.universe)}</small>` : ''}
-              <div class="subtitle" style="font-size:0.84rem; margin-top:0.2rem;">${escapeHtml(item.description)}</div>
-            </div>
-            <div style="display:flex; gap:0.35rem;">
-              <button type="button" class="btn" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="unlinkCodexEntry('${book.id}', '${item.id}')" title="Відкріпити від цієї книги">Відкріпити</button>
-              ${canDeleteGlobal ? `<button type="button" class="btn btn-danger" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="deleteCodexEntry('${book.id}', '${item.id}')" title="Видалити назавжди">✕</button>` : ''}
-            </div>
-          </div>
-        `;
-      }).join('') || '<p class="subtitle">До цієї книги поки не підключено жодного запису Кодексу.</p>'}
-    </div>
-    
     const currentLinks = Array.isArray(book.codex_ids) ? book.codex_ids : [];
     await TaliesinAPI.updateBookCodexLinks(bookId, [...currentLinks, created.id]);
     await refresh();
