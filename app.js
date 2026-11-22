@@ -1897,3 +1897,13 @@ async function refresh() {
     renderHallOfFame();
   }
 }
+
+applyTheme(document.documentElement.getAttribute('data-theme') || 'day');
+
+// 1. Миттєво малюємо кнопку "Увійти / Реєстрація" ще ДО запиту до бази, 
+// щоб вона ніколи не пропадала при оновленні сторінки!
+state = { users: [], currentUserId: null, articles: [], books: [], codexEntries: [] };
+renderHeader();
+
+// 2. А тепер підтягуємо реальні дані та сесію з Supabase
+refresh();
