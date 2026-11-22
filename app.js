@@ -1667,9 +1667,10 @@ document.querySelectorAll('[data-editor]').forEach(tab => {
 });
 
 function populateBookSelect() {
+  if (!state) return;
   const user = getCurrentUser();
   const select = document.getElementById('bookSelect');
-  const editableBooks = state.books.filter(b => canEditBook(b, user));
+  const editableBooks = (state.books || []).filter(b => canEditBook(b, user));
   select.innerHTML = `<option value="">-- Створити нову книгу --</option>` +
     editableBooks.map(b => `<option value="${b.id}">${b.title}</option>`).join('');
 }
