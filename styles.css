@@ -591,3 +591,27 @@ h1, h2, h3, .brand-name {
 .streak-day-box.next {
   border: 2px dashed var(--accent);
 }
+
+.universe-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  max-width: 100%;
+  word-break: break-word;
+  text-align: left;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.universe-tag:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
