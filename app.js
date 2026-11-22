@@ -936,6 +936,10 @@ function renderBooks() {
   }).join('');
 }
 
+document.getElementById('bookSearch')?.addEventListener('input', renderBooks);
+document.getElementById('bookFilter')?.addEventListener('change', renderBooks);
+document.getElementById('bookSort')?.addEventListener('change', renderBooks);
+
 window.openBookReviewsModal = (bookId) => {
   const book = state.books.find(b => b.id === bookId);
   if (!book) return;
