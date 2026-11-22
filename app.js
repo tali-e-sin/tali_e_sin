@@ -354,10 +354,20 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
-function formatUniverseTag(universe) {
-  const clean = String(universe || '').trim().replace(/^#+/, '');
-  if (!clean) return '';
-  return `#${clean}`;
+function parseUniverseTags(universe) {
+  return String(universe || '')
+    .split(/[,#]+/)
+    .map(t => t.trim())
+    .filter(Boolean);
+}
+
+function renderUniverseTags(universe, interactive = false) {
+  const tags = parseUniverseTags(universe);
+  if (!tags.length) return '';
+  return tags.map(tag => interactive
+    ? `<button type="button" class="universe-tag" onclick="filterCodexByUniverse('${escapeHtml(tag)}')" title="Фільтрувати за світом #${escapeHtml(tag)}">#${escapeHtml(tag)}</button>`
+    : `<span class="universe-tag" style="cursor:default;">#${escapeHtml(tag)}</span>`
+  ).join('');
 }
 
 window.filterCodexByUniverse = (universe) => {
@@ -1162,7 +1172,7 @@ window.openBookEditorModal = (bookId) => {
           <option value="Термін / Подія">Термін / Подія</option>
         </select>
       </div>
-      <input type="text" id="codexNewUniverse" class="input" maxlength="45" placeholder="Всесвіт або уточнення (напр., Загальний архетип, Хроніки Авену)" />
+      <input type="text" id="codexNewUniverse" class="input" maxlength="120" placeholder="Світи через кому або # (напр., #Авен, #Тіні)" />
       <textarea id="codexNewDesc" class="input textarea" rows="2" maxlength="800" placeholder="Опис, особливості або відмінності у вашому світі..." required></textarea>
       <label class="subtitle" style="display:flex; align-items:center; gap:0.45rem; cursor:pointer;">
         <input type="checkbox" id="codexIsShared" checked />
@@ -1177,9 +1187,11 @@ window.openBookEditorModal = (bookId) => {
         return `
           <div class="chapter-item" style="flex-wrap:wrap;">
             <div>
-              <strong>${escapeHtml(item.title)}</strong>
-              <span class="badge">${escapeHtml(item.category || '')}</span>
-              ${item.universe ? `<small class="subtitle" style="margin-left:0.35rem; color:var(--accent); font-weight:600;">${escapeHtml(formatUniverseTag(item.universe))}</small>` : ''}
+              <div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">
+                <strong>${escapeHtml(item.title)}</strong>
+                <span class="badge">${escapeHtml(item.category || '')}</span>
+                ${renderUniverseTags(item.universe, false)}
+              </div>
               <div class="subtitle" style="font-size:0.84rem; margin-top:0.2rem;">${escapeHtml(item.description)}</div>
             </div>
             <div style="display:flex; gap:0.35rem;">
@@ -1256,9 +1268,9 @@ window.openBookCodexModal = (bookId, returnChapterId = null) => {
           return `
             <div class="comment-box" style="margin-top:0.65rem;">
               <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.3rem;">
-                <div>
+                <div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">
                   <strong style="font-size:1.02rem;">${escapeHtml(item.title)}</strong>
-                  ${item.universe ? `<small class="subtitle" style="margin-left:0.35rem; color:var(--accent); font-weight:600;">${escapeHtml(formatUniverseTag(item.universe))}</small>` : ''}
+                  ${renderUniverseTags(item.universe, false)}
                 </div>
                 <div style="display:flex; gap:0.35rem; align-items:center;">
                   ${canTip ? `<button type="button" class="btn" style="padding:0.2rem 0.55rem; font-size:0.78rem;" onclick="openTipModal('${escapeHtml(item.author_id)}', '${escapeHtml(item.author_name || 'Бард')}', 'Кодекс: ${escapeHtml(item.title)}')">🎁</button>` : ''}
@@ -1364,11 +1376,19 @@ function renderGlobalCodex() {
     if (!canSee) return false;
     if (cat !== 'all' && e.category !== cat) return false;
     if (!q) return true;
+
+    const entryBooks = (state.books || []).filter(b =>
+      Array.isArray(b.codex_ids) && b.codex_ids.includes(e.id)
+    );
+    const matchesBook = entryBooks.some(b => (b.title || '').toLowerCase().includes(q));
+    const matchesUniverse = parseUniverseTags(e.universe).some(t => t.toLowerCase().includes(q));
+
     return (
       (e.title || '').toLowerCase().includes(q) ||
       (e.description || '').toLowerCase().includes(q) ||
-      (e.universe || '').toLowerCase().includes(q) ||
-      (e.author_name || '').toLowerCase().includes(q)
+      (e.author_name || '').toLowerCase().includes(q) ||
+      matchesUniverse ||
+      matchesBook
     );
   });
 
@@ -1381,18 +1401,15 @@ function renderGlobalCodex() {
     const linkedBooks = (state.books || []).filter(b =>
       Array.isArray(b.codex_ids) && b.codex_ids.includes(entry.id)
     );
-    const canDelete = user && (user.role === 'admin' || entry.author_id === user.id);
     const canEdit = user && (user.role === 'admin' || entry.author_id === user.id);
     const canTip = entry.author_id && (!user || user.id !== entry.author_id);
-    
+
     return `
       <article class="card">
         <div>
-          <div class="meta-row" style="margin-bottom:0.6rem; gap:0.4rem; flex-wrap:wrap; align-items:flex-start;">
+          <div class="meta-row" style="margin-bottom:0.6rem; gap:0.35rem; flex-wrap:wrap; align-items:flex-start;">
             <span class="badge">${escapeHtml(entry.category || 'Термін / Подія')}</span>
-            ${entry.universe
-              ? `<button type="button" class="universe-tag" onclick="filterCodexByUniverse('${escapeHtml(entry.universe)}')" title="Фільтрувати за цим світом">${escapeHtml(formatUniverseTag(entry.universe))}</button>`
-              : ''}
+            ${renderUniverseTags(entry.universe, true)}
             ${!entry.is_shared ? `<span class="badge">🔒 Приватний</span>` : ''}
           </div>
           <h3>${escapeHtml(entry.title)}</h3>
@@ -1401,8 +1418,8 @@ function renderGlobalCodex() {
 
         <div>
           ${linkedBooks.length ? `
-            <div style="margin-bottom:0.75rem; font-size:0.84rem; color:var(--text-muted);">
-              📚 Зустрічається у книгах: <strong>${linkedBooks.map(b => escapeHtml(b.title)).join(', ')}</strong>
+            <div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center; margin-bottom:0.75rem;">
+              ${linkedBooks.map(b => `<button type="button" class="universe-tag book-tag" onclick="filterCodexByUniverse('${escapeHtml(b.title)}')" title="Фільтрувати за книгою «${escapeHtml(b.title)}»">📚 #${escapeHtml(b.title)}</button>`).join('')}
             </div>
           ` : ''}
           <div class="meta-row" style="gap:0.4rem; flex-wrap:wrap;">
@@ -1453,7 +1470,7 @@ window.openCreateGlobalCodexModal = () => {
           <option value="Термін / Подія">Термін / Подія</option>
         </select>
       </div>
-        <input type="text" id="gCodexUniverse" class="input" maxlength="45" placeholder="Всесвіт (напр., Загальний архетип, Хроніки Авену...)" />      <textarea id="gCodexDesc" class="input textarea" rows="5" maxlength="1500" placeholder="Детальний опис, риси, історія або особливості..." required></textarea>
+        <input type="text" id="gCodexUniverse" class="input" maxlength="120" placeholder="Світи через кому або # (напр., #Авен, #Тіні)" />      <textarea id="gCodexDesc" class="input textarea" rows="5" maxlength="1500" placeholder="Детальний опис, риси, історія або особливості..." required></textarea>
       <label class="subtitle" style="display:flex; align-items:center; gap:0.45rem; cursor:pointer;">
         <input type="checkbox" id="gCodexShared" checked />
         Зробити запис відкритим для всіх авторів порталу
@@ -1508,7 +1525,7 @@ window.openEditCodexModal = (entryId, returnBookId = null) => {
           <option value="Термін / Подія">Термін / Подія</option>
         </select>
       </div>
-      <input type="text" id="editCodexUniverse" class="input" maxlength="45" placeholder="Всесвіт або уточнення..." />
+      <input type="text" id="editCodexUniverse" class="input" maxlength="120" placeholder="Всесвіт або уточнення через кому або # (напр., #Авен, #Тіні)"/>
       <textarea id="editCodexDesc" class="input textarea" rows="5" maxlength="1500" required></textarea>
       <label class="subtitle" style="display:flex; align-items:center; gap:0.45rem; cursor:pointer;">
         <input type="checkbox" id="editCodexShared" />
