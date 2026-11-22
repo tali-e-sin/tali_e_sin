@@ -341,7 +341,7 @@ window.openEditCodexModal = (entryId, returnBookId = null) => {
   const renderEditDynamic = () => {
     const box = document.getElementById('editCodexDynamicFields');
     const disc = getDisciplineById(document.getElementById('editCodexDiscipline').value);
-    const fields = Array.isArray(disc?.schema_fields) ? disc.schema_fields : [];
+    const fields = (Array.isArray(disc?.schema_fields) ? disc.schema_fields : []).filter(f => !f.hidden);    
     const curAttrs = entry.attributes || {};
     if (!fields.length) {
       box.classList.add('hidden');
@@ -365,6 +365,7 @@ window.openEditCodexModal = (entryId, returnBookId = null) => {
     const cleanUniverse = parseUniverseTags(document.getElementById('editCodexUniverse').value).join(', ');
     const discId = document.getElementById('editCodexDiscipline').value;
     const updatedAttrs = { ...(entry.attributes || {}) };
+    
     document.querySelectorAll('#editCodexDynamicFields .edit-dyn-attr').forEach(el => {
       updatedAttrs[el.dataset.attrKey] = el.value.trim();
     });
@@ -788,7 +789,7 @@ function renderWorkshopDynamicFields() {
   if (!container) return;
 
   const disc = getDisciplineById(discId);
-  const fields = Array.isArray(disc?.schema_fields) ? disc.schema_fields : [];
+  const fields = (Array.isArray(disc?.schema_fields) ? disc.schema_fields : []).filter(f => !f.hidden);
 
   if (!fields.length) {
     container.classList.add('hidden');
