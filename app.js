@@ -1881,7 +1881,7 @@ async function refresh() {
     state = await TaliesinAPI.getState();
   } catch (err) {
     console.error('Помилка підключення до Supabase:', err);
-    state = { users: [], currentUserId: null, articles: [], books: [] };
+    state = { users: [], currentUserId: null, articles: [], books: [], codexEntries: [] };
   }
   renderHeader();
   renderArticles();
@@ -1896,6 +1896,3 @@ async function refresh() {
     renderHallOfFame();
   }
 }
-
-applyTheme(document.documentElement.getAttribute('data-theme') || 'day');
-refresh();
