@@ -1139,7 +1139,7 @@ window.openBookEditorModal = (bookId) => {
     <h3>📖 Кодекс світу (${bookCodex.length})</h3>
     <p class="subtitle" style="margin-bottom:0.75rem;">Підключайте спільні поняття всесвітів (напр., Ельфи, Астральна проєкція) або створюйте власні картки</p>
 
-   <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; justify-content:space-between; margin-bottom:1rem; padding:0.75rem; background:var(--bg-subtle); border-radius:12px;">
+    <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; justify-content:space-between; margin-bottom:1rem; padding:0.75rem; background:var(--bg-subtle); border-radius:12px;">
       ${availableShared.length ? `
         <select id="sharedCodexSelect" class="input" style="flex:1; min-width:200px;">
           <option value="">-- Обрати зі спільної енциклопедії (${availableShared.length}) --</option>
