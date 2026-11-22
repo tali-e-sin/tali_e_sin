@@ -429,6 +429,18 @@ window.TaliesinAPI = {
     if (error) throw new Error(error.message);
   },
 
+  async updateArticleCodexLinks(articleId, { codexIds, excludedCodexIds }) {
+    const payload = {};
+    if (codexIds !== undefined) payload.codex_ids = codexIds;
+    if (excludedCodexIds !== undefined) payload.excluded_codex_ids = excludedCodexIds;
+
+    const { error } = await sbClient
+      .from('articles')
+      .update(payload)
+      .eq('id', articleId);
+    if (error) throw new Error(error.message);
+  },
+
   // --- Кодекс: зв'язки для діаграм ---
   async createCodexRelation({
     sourceId,
