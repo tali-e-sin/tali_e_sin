@@ -1,7 +1,24 @@
 // --- Модуль Кодексу, Діаграм та Майстерні Кодексу ---
 
+const FALLBACK_DISCIPLINES = [
+  { id: 'history', title: 'Історія та Генеалогія', parent_id: 'humanities', schema_fields: [] },
+  { id: 'biology', title: 'Біологія та Види', parent_id: 'natural', schema_fields: [] },
+  { id: 'geography', title: 'Географія та Астрономія', parent_id: 'natural', schema_fields: [] },
+  { id: 'sociology', title: 'Соціологія, Держави та Гільдії', parent_id: 'humanities', schema_fields: [] },
+  { id: 'technology', title: 'Технологія та Артефакти', parent_id: 'applied', schema_fields: [] },
+  { id: 'mythology', title: 'Міфологія, Релігія та Філософія', parent_id: 'humanities', schema_fields: [] },
+  { id: 'physics', title: 'Фізика та Космологія', parent_id: 'natural', schema_fields: [] },
+  { id: 'mathematics', title: 'Математика', parent_id: 'formal', schema_fields: [] },
+  { id: 'arcana', title: 'Магія та Астральні явища', parent_id: 'applied', schema_fields: [] }
+];
+
+function getAvailableDisciplines() {
+  const fromState = state?.codexDisciplines;
+  return (Array.isArray(fromState) && fromState.length) ? fromState : FALLBACK_DISCIPLINES;
+}
+
 function getDisciplineById(id) {
-  return (state?.codexDisciplines || []).find(d => d.id === id) || null;
+  return getAvailableDisciplines().find(d => d.id === id) || null;
 }
 
 function getDisciplineTitle(entry) {
@@ -96,9 +113,9 @@ document.getElementById('openWorkshopCodexBtn')?.addEventListener('click', () =>
 
 function populateGlobalDisciplineFilter() {
   const select = document.getElementById('globalCodexDiscipline');
-  if (!select || !state) return;
+  if (!select) return;
   const currentVal = select.value || 'all';
-  const disciplines = state.codexDisciplines || [];
+  const disciplines = getAvailableDisciplines();
   select.innerHTML = `<option value="all">Усі науки та галузі</option>` +
     disciplines.map(d => {
       const prefix = d.parent_id ? '↳ ' : '🏛️ ';
@@ -106,13 +123,6 @@ function populateGlobalDisciplineFilter() {
     }).join('');
   select.value = currentVal;
 }
-
-if (typeof populateGlobalDisciplineFilter === 'function') {
-    populateGlobalDisciplineFilter();
-  }
-  if (typeof initWorkshopCodex === 'function') {
-    initWorkshopCodex();
-  }
 
 function renderGlobalCodex() {
   const container = document.getElementById('globalCodexList');
@@ -126,7 +136,7 @@ function renderGlobalCodex() {
   const allowedDisciplineIds = new Set();
   if (discFilter !== 'all') {
     allowedDisciplineIds.add(discFilter);
-    (state.codexDisciplines || []).forEach(d => {
+    getAvailableDisciplines().forEach(d => {
       if (d.parent_id === discFilter) allowedDisciplineIds.add(d.id);
     });
   }
@@ -287,7 +297,7 @@ window.openEditCodexModal = (entryId, returnBookId = null) => {
   const canEdit = user.role === 'admin' || (entry.author_id === user.id && entry.canon_status !== 'official');
   if (!canEdit) return alert('Канонічні записи можуть редагувати лише Хранителі порталу.');
 
-  const disciplines = state.codexDisciplines || [];
+  const disciplines = getAvailableDisciplines();
   const entries = (state.codexEntries || []).filter(e => e.id !== entry.id);
 
   openModal(`
@@ -411,7 +421,7 @@ function renderCodexDiagram() {
   const relations = state.codexRelations || [];
 
   if (type === 'disciplines') {
-    const disciplines = state.codexDisciplines || [];
+    const disciplines = getAvailableDisciplines();
     const renderDiscBranch = (parentId = null) => {
       const children = disciplines.filter(d => (d.parent_id || null) === parentId);
       if (!children.length) return '';
@@ -550,21 +560,28 @@ document.getElementById('diagramTypeSelect')?.addEventListener('change', renderC
 document.getElementById('diagramRootSelect')?.addEventListener('change', renderCodexDiagram);
 
 // --- Майстерня: вкладка Кодексу та зв'язків ---
-const FALLBACK_DISCIPLINES = [
-  { id: 'history', title: 'Історія та Генеалогія', parent_id: 'humanities', schema_fields: [] },
-  { id: 'biology', title: 'Біологія та Види', parent_id: 'natural', schema_fields: [] },
-  { id: 'geography', title: 'Географія та Астрономія', parent_id: 'natural', schema_fields: [] },
-  { id: 'sociology', title: 'Соціологія, Держави та Гільдії', parent_id: 'humanities', schema_fields: [] },
-  { id: 'technology', title: 'Технологія та Артефакти', parent_id: 'applied', schema_fields: [] },
-  { id: 'mythology', title: 'Міфологія, Релігія та Філософія', parent_id: 'humanities', schema_fields: [] },
-  { id: 'physics', title: 'Фізика та Космологія', parent_id: 'natural', schema_fields: [] },
-  { id: 'mathematics', title: 'Математика', parent_id: 'formal', schema_fields: [] },
-  { id: 'arcana', title: 'Магія та Астральні явища', parent_id: 'applied', schema_fields: [] }
-];
+function renderWorkshopDynamicFields() {
+  const container = document.getElementById('wsCodexDynamicFields');
+  const discId = document.getElementById('wsCodexDiscipline')?.value;
+  if (!container) return;
 
-function getAvailableDisciplines() {
-  const fromState = state?.codexDisciplines;
-  return (Array.isArray(fromState) && fromState.length) ? fromState : FALLBACK_DISCIPLINES;
+  const disc = getDisciplineById(discId);
+  const fields = Array.isArray(disc?.schema_fields) ? disc.schema_fields : [];
+
+  if (!fields.length) {
+    container.classList.add('hidden');
+    container.innerHTML = '';
+    return;
+  }
+
+  container.classList.remove('hidden');
+  container.innerHTML = `
+    <strong style="font-size:0.86rem; color:var(--accent);">📐 Параметри науки «${escapeHtml(disc.title)}»</strong>
+    ${fields.map(f => f.type === 'textarea'
+      ? `<textarea class="input textarea ws-dynamic-attr" data-attr-key="${escapeHtml(f.key)}" rows="2" placeholder="${escapeHtml(f.label)}"></textarea>`
+      : `<input type="text" class="input ws-dynamic-attr" data-attr-key="${escapeHtml(f.key)}" placeholder="${escapeHtml(f.label)}" />`
+    ).join('')}
+  `;
 }
 
 function initWorkshopCodex() {
