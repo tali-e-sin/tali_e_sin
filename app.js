@@ -354,18 +354,28 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
-function parseUniverseTags(universe) {
+/**
+ * Універсальна функція відбору унікальних значень (без дублікатів).
+ * @param {Array} items - Вхідний масив елементів
+ * @param {Function} keySelector - Функція отримання ключа порівняння (за замовчуванням: рядок у нижньому регістрі)
+ * @returns {Array} Масив унікальних елементів зі збереженням першого входження
+ */
+function deduplicateList(items, keySelector = (item) => String(item ?? '').trim().toLowerCase()) {
   const seen = new Set();
-  return String(universe || '')
+  return (Array.isArray(items) ? items : []).filter(item => {
+    const key = keySelector(item);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function parseUniverseTags(universe) {
+  const rawTags = String(universe || '')
     .split(/[,#]+/)
     .map(t => t.trim())
-    .filter(t => {
-      if (!t) return false;
-      const key = t.toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    .filter(Boolean);
+  return deduplicateList(rawTags);
 }
 
 function renderUniverseTags(universe, interactive = false) {
@@ -615,6 +625,37 @@ function openAuthModal() {
     }
   };
 }
+
+// Перевірка, чи вже існує email у списку користувачів (без урахування регістру та пробілів)
+function isEmailTaken(email, users = state?.users || []) {
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized) return false;
+  return users.some(u => String(u.email || '').trim().toLowerCase() === normalized);
+}
+
+// Отримання списку користувачів без дублікатів по email
+const uniqueUsers = deduplicateList(state.users, u => String(u.email || '').trim().toLowerCase());
+
+const uniqueBooks = deduplicateList(books, b => b.id);
+
+registerForm.onsubmit = async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('regEmail').value.trim();
+    if (isEmailTaken(email)) {
+      return alert('Бард із такою електронною поштою вже зареєстрований на порталі.');
+    }
+    try {
+      await TaliesinAPI.register({
+        name: document.getElementById('regName').value,
+        email,
+        password: document.getElementById('regPassword').value
+      });
+      closeModal();
+      await refresh();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
 
 // --- Симулятор реклами за монети ---
 document.getElementById('coinsBtn').addEventListener('click', () => {
@@ -1409,8 +1450,9 @@ function renderGlobalCodex() {
     );
 
     // Унікальні назви книг, щоб не дублювалися однакові теги
-    const uniqueBookTitles = [...new Set(linkedBooks.map(b => (b.title || '').trim()).filter(Boolean))];
-    const universeTagsHtml = renderUniverseTags(entry.universe, true);
+const uniqueBookTitles = deduplicateList(
+  linkedBooks.map(b => (b.title || '').trim())
+);    const universeTagsHtml = renderUniverseTags(entry.universe, true);
 
     const canEdit = user && (user.role === 'admin' || entry.author_id === user.id);
     const canTip = entry.author_id && (!user || user.id !== entry.author_id);
