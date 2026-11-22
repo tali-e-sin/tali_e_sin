@@ -1123,15 +1123,18 @@ window.openBookEditorModal = (bookId) => {
     <h3>📖 Кодекс світу (${bookCodex.length})</h3>
     <p class="subtitle" style="margin-bottom:0.75rem;">Підключайте спільні поняття всесвітів (напр., Ельфи, Астральна проєкція) або створюйте власні картки</p>
 
-    ${availableShared.length ? `
-      <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1rem; padding:0.75rem; background:var(--bg-subtle); border-radius:12px;">
+   <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; justify-content:space-between; margin-bottom:1rem; padding:0.75rem; background:var(--bg-subtle); border-radius:12px;">
+      ${availableShared.length ? `
         <select id="sharedCodexSelect" class="input" style="flex:1; min-width:200px;">
-          <option value="">-- Обрати зі спільної енциклопедії порталу --</option>
+          <option value="">-- Обрати зі спільної енциклопедії (${availableShared.length}) --</option>
           ${availableShared.map(e => `<option value="${e.id}">${escapeHtml(e.title)} (${escapeHtml(e.category)}${e.universe ? ` · ${escapeHtml(e.universe)}` : ''})</option>`).join('')}
         </select>
         <button type="button" class="btn" onclick="linkSharedCodexEntry('${book.id}')">+ Підключити до книги</button>
-      </div>
-    ` : ''}
+      ` : `
+        <span class="subtitle" style="font-size:0.86rem;">Усі наявні спільні картки вже підключені до цієї книги.</span>
+      `}
+      <button type="button" class="btn" style="font-size:0.82rem;" onclick="closeModal(); navigateTo('codex');">📖 Відкрити весь Кодекс</button>
+    </div>
 
     <form class="stack-form" onsubmit="addCodexEntry(event, '${book.id}')" style="margin-bottom:1rem;">
       <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
@@ -1190,6 +1193,7 @@ window.openBookEditorModal = (bookId) => {
     }
   };
 };
+
 window.openBookCodexModal = (bookId, returnChapterId = null) => {
   const book = state.books.find(b => b.id === bookId);
   if (!book) return;
