@@ -866,3 +866,21 @@ h1, h2, h3, .brand-name {
   text-align: center;
   min-width: 200px;
 }
+
+/* --- Інтерактивні терміни Кодексу в тексті читалки --- */
+.codex-inline-term {
+  background: none;
+  border: none;
+  border-bottom: 1.5px dotted var(--accent);
+  padding: 0 1px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.codex-inline-term:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
