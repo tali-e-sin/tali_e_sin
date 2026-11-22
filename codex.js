@@ -954,3 +954,32 @@ window.openCodexTermFromReader = (entryId) => {
     openCodexNodePreview(entryId);
   }
 };
+
+window.quickUnlinkCodexTerm = async (entryId) => {
+  const ctx = window.readerReturnContext;
+  if (!ctx) return;
+
+  try {
+    if (ctx.type === 'chapter') {
+      const book = (state.books || []).find(b => b.id === ctx.bookId);
+      if (!book) return;
+      const nextLinks = (book.codex_ids || []).filter(id => id !== entryId);
+      await TaliesinAPI.updateBookCodexLinks(book.id, nextLinks);
+      await refresh();
+      readChapter(ctx.bookId, ctx.chapterId);
+    } else if (ctx.type === 'article') {
+      const art = (state.articles || []).find(a => a.id === ctx.articleId);
+      if (!art) return;
+      const nextLinks = (art.codex_ids || []).filter(id => id !== entryId);
+      const nextExcluded = deduplicateList([...(art.excluded_codex_ids || []), entryId]);
+      await TaliesinAPI.updateArticleCodexLinks(art.id, {
+        codexIds: nextLinks,
+        excludedCodexIds: nextExcluded
+      });
+      await refresh();
+      openArticle(ctx.articleId);
+    }
+  } catch (err) {
+    alert(err.message);
+  }
+};
