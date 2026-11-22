@@ -81,13 +81,58 @@ function renderUniverseTags(universe, interactive = false) {
   ).join('');
 }
 
-function formatInlineMarkdown(text) {
-  return escapeHtml(text)
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>');
+function escapeRegex(str) {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function formatLiteraryText(raw) {
+function linkifyCodexTerms(escapedHtml, codexEntries = []) {
+  if (!Array.isArray(codexEntries) || !codexEntries.length) return escapedHtml;
+
+  // Сортуємо від найдовших назв до найкоротших, щоб фрази з 2-3 слів мали пріоритет
+  const sorted = [...codexEntries]
+    .filter(e => e && e.id && String(e.title || '').trim().length >= 3)
+    .sort((a, b) => b.title.trim().length - a.title.trim().length);
+
+  if (!sorted.length) return escapedHtml;
+
+  const mapByLower = new Map();
+  const patterns = [];
+
+  sorted.forEach(entry => {
+    const cleanTitle = entry.title.trim();
+    const key = cleanTitle.toLowerCase();
+    if (!mapByLower.has(key)) {
+      mapByLower.set(key, entry);
+      patterns.push(escapeRegex(escapeHtml(cleanTitle)));
+    }
+  });
+
+  if (!patterns.length) return escapedHtml;
+
+  // Розбиваємо рядок на HTML-теги та звичайний текст, щоб не замінювати всередині тегів
+  const regex = new RegExp(`(^|[^\\p{L}\\p{N}_])(${patterns.join('|')})(?=$|[^\\p{L}\\p{N}_])`, 'giu');
+
+  return escapedHtml
+    .split(/(<[^>]+>)/g)
+    .map(part => {
+      if (part.startsWith('<')) return part;
+      return part.replace(regex, (match, prefix, foundWord) => {
+        const entry = mapByLower.get(foundWord.toLowerCase());
+        if (!entry) return match;
+        return `${prefix}<button type="button" class="codex-inline-term" onclick="openCodexTermFromReader('${escapeHtml(entry.id)}')" title="📖 Відкрити в Кодексі: ${escapeHtml(entry.title)}">${foundWord}</button>`;
+      });
+    })
+    .join('');
+}
+
+function formatInlineMarkdown(text, codexEntries = []) {
+  const html = escapeHtml(text)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>');
+  return linkifyCodexTerms(html, codexEntries);
+}
+
+function formatLiteraryText(raw, codexEntries = []) {
   if (!raw) return '';
   const blocks = raw
     .replace(/\r\n/g, '\n')
@@ -101,9 +146,9 @@ function formatLiteraryText(raw) {
     }
     if (block.startsWith('>')) {
       const quoteText = block.replace(/^>\s?/gm, '').replace(/\n/g, '<br>');
-      return `<blockquote>${formatInlineMarkdown(quoteText)}</blockquote>`;
+      return `<blockquote>${formatInlineMarkdown(quoteText, codexEntries)}</blockquote>`;
     }
-    const lines = block.split('\n').map(line => formatInlineMarkdown(line.trim())).join('<br>');
+    const lines = block.split('\n').map(line => formatInlineMarkdown(line.trim(), codexEntries)).join('<br>');
     return `<p>${lines}</p>`;
   }).join('');
 }
