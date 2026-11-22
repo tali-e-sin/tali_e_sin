@@ -14,12 +14,22 @@ function getGuestId() {
 
 window.TaliesinAPI = {
   async getState() {
-    const [{ data: sessionData }, usersRes, articlesRes, booksRes, codexRes] = await Promise.all([
+    const [
+      { data: sessionData },
+      usersRes,
+      articlesRes,
+      booksRes,
+      codexRes,
+      disciplinesRes,
+      relationsRes
+    ] = await Promise.all([
       sbClient.auth.getSession(),
       sbClient.from('profiles').select('*'),
       sbClient.from('articles').select('*').order('created_at', { ascending: false }),
       sbClient.from('books').select('*').order('created_at', { ascending: false }),
-      sbClient.from('codex_entries').select('*').order('title', { ascending: true })
+      sbClient.from('codex_entries').select('*').order('title', { ascending: true }),
+      sbClient.from('codex_disciplines').select('*').order('sort_order', { ascending: true }),
+      sbClient.from('codex_relations').select('*').order('sort_order', { ascending: true })
     ]);
 
     const currentUserId = sessionData?.session?.user?.id || null;
@@ -41,7 +51,9 @@ window.TaliesinAPI = {
       currentUserId,
       articles: articlesRes.data || [],
       books: booksRes.data || [],
-      codexEntries: codexRes.data || []
+      codexEntries: codexRes.data || [],
+      codexDisciplines: disciplinesRes.data || [],
+      codexRelations: relationsRes.data || []
     };
   },
 
@@ -106,7 +118,6 @@ window.TaliesinAPI = {
       throw new Error('База даних відхилила оновлення профілю');
     }
 
-    // Оновлюємо відображуване ім'я в уже опублікованих статтях і книгах автора
     await Promise.all([
       sbClient.from('articles').update({ author: cleanName }).eq('author_id', user.id),
       sbClient.from('books').update({ author: cleanName }).eq('author_id', user.id)
@@ -323,14 +334,31 @@ window.TaliesinAPI = {
     if (error) throw new Error(error.message);
   },
 
-  async createCodexEntry({ title, category, description, universe = '', isShared = true }) {
+  // --- Кодекс: картки, наслідування та атрибути ---
+  async createCodexEntry({
+    title,
+    category = '',
+    disciplineId = 'mythology',
+    parentEntryId = null,
+    canonStatus = 'community',
+    attributes = {},
+    description,
+    universe = '',
+    isShared = true
+  }) {
     const { data: { user } } = await sbClient.auth.getUser();
     if (!user) throw new Error('Увійдіть, щоб додавати записи до Кодексу');
 
-    const { data: profile } = await sbClient.from('profiles').select('name').eq('id', user.id).single();
+    const { data: profile } = await sbClient.from('profiles').select('name, role').eq('id', user.id).single();
+    const safeCanon = (canonStatus === 'official' && profile?.role !== 'admin') ? 'pending' : canonStatus;
+
     const { data, error } = await sbClient.from('codex_entries').insert({
       title: title.trim(),
-      category,
+      category: category || disciplineId,
+      discipline_id: disciplineId || null,
+      parent_entry_id: parentEntryId || null,
+      canon_status: safeCanon,
+      attributes: attributes && typeof attributes === 'object' ? attributes : {},
       description: description.trim(),
       universe: universe.trim(),
       is_shared: Boolean(isShared),
@@ -342,18 +370,49 @@ window.TaliesinAPI = {
     return data;
   },
 
-  async updateCodexEntry(entryId, { title, category, description, universe = '', isShared = true }) {
+  async updateCodexEntry(entryId, {
+    title,
+    category,
+    disciplineId,
+    parentEntryId,
+    canonStatus,
+    attributes,
+    description,
+    universe = '',
+    isShared = true
+  }) {
+    const { data: { user } } = await sbClient.auth.getUser();
+    if (!user) throw new Error('Потрібна авторизація');
+
+    const { data: profile } = await sbClient.from('profiles').select('role').eq('id', user.id).single();
+    const payload = {
+      title: title.trim(),
+      description: description.trim(),
+      universe: universe.trim(),
+      is_shared: Boolean(isShared)
+    };
+
+    if (category !== undefined) payload.category = category;
+    if (disciplineId !== undefined) payload.discipline_id = disciplineId || null;
+    if (parentEntryId !== undefined) payload.parent_entry_id = parentEntryId || null;
+    if (attributes !== undefined) payload.attributes = attributes;
+    if (canonStatus !== undefined) {
+      payload.canon_status = (canonStatus === 'official' && profile?.role !== 'admin') ? 'pending' : canonStatus;
+    }
+
     const { error } = await sbClient
       .from('codex_entries')
-      .update({
-        title: title.trim(),
-        category,
-        description: description.trim(),
-        universe: universe.trim(),
-        is_shared: Boolean(isShared)
-      })
+      .update(payload)
       .eq('id', entryId);
 
+    if (error) throw new Error(error.message);
+  },
+
+  async setCodexCanonStatus(entryId, nextStatus) {
+    const { error } = await sbClient
+      .from('codex_entries')
+      .update({ canon_status: nextStatus })
+      .eq('id', entryId);
     if (error) throw new Error(error.message);
   },
 
@@ -367,6 +426,65 @@ window.TaliesinAPI = {
       .from('books')
       .update({ codex_ids: codexIds })
       .eq('id', bookId);
+    if (error) throw new Error(error.message);
+  },
+
+  // --- Кодекс: зв'язки для діаграм ---
+  async createCodexRelation({
+    sourceId,
+    targetId,
+    relationType = 'related_to',
+    diagramType = 'tree',
+    roleLabel = '',
+    tierLevel = 1,
+    periodLabel = '',
+    sortOrder = 0
+  }) {
+    const { data: { user } } = await sbClient.auth.getUser();
+    if (!user) throw new Error('Увійдіть, щоб створювати зв’язки');
+    if (!sourceId || !targetId || sourceId === targetId) {
+      throw new Error('Оберіть дві різні сутності для зв’язку');
+    }
+
+    const { data: profile } = await sbClient.from('profiles').select('role').eq('id', user.id).single();
+
+    const { data, error } = await sbClient.from('codex_relations').insert({
+      source_id: sourceId,
+      target_id: targetId,
+      relation_type: relationType,
+      diagram_type: diagramType,
+      role_label: roleLabel.trim(),
+      tier_level: Math.max(1, Number(tierLevel) || 1),
+      period_label: periodLabel.trim(),
+      sort_order: Number(sortOrder) || 0,
+      canon_status: profile?.role === 'admin' ? 'official' : 'community',
+      author_id: user.id
+    }).select().single();
+
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
+  async deleteCodexRelation(relationId) {
+    const { error } = await sbClient.from('codex_relations').delete().eq('id', relationId);
+    if (error) throw new Error(error.message);
+  },
+
+  // --- Архітектор дисциплін (Адмін) ---
+  async saveCodexDiscipline({ id, title, parentId = null, dependsOn = [], defaultDiagram = 'tree', schemaFields = [], sortOrder = 50 }) {
+    const cleanId = String(id || '').trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_');
+    if (!cleanId || !title.trim()) throw new Error('Вкажіть системний ключ (латиницею) та назву науки');
+
+    const { error } = await sbClient.from('codex_disciplines').upsert({
+      id: cleanId,
+      title: title.trim(),
+      parent_id: parentId || null,
+      depends_on: Array.isArray(dependsOn) ? dependsOn : [],
+      default_diagram: defaultDiagram || 'tree',
+      schema_fields: Array.isArray(schemaFields) ? schemaFields : [],
+      sort_order: Number(sortOrder) || 50
+    });
+
     if (error) throw new Error(error.message);
   },
 
