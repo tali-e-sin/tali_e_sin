@@ -1167,6 +1167,11 @@ window.openBookEditorModal = (bookId) => {
               <div class="subtitle" style="font-size:0.84rem; margin-top:0.2rem;">${escapeHtml(item.description)}</div>
             </div>
             <div style="display:flex; gap:0.35rem;">
+              ${canDeleteGlobal ? `<button type="button" class="btn" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="openEditCodexModal('${item.id}', '${book.id}')" title="Редагувати запис">✏️</button>` : ''}
+              <button type="button" class="btn" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="unlinkCodexEntry('${book.id}', '${item.id}')" title="Відкріпити від цієї книги">Відкріпити</button>
+              ${canDeleteGlobal ? `<button type="button" class="btn btn-danger" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="deleteCodexEntry('${book.id}', '${item.id}')" title="Видалити назавжди">✕</button>` : ''}
+            </div>
+            <div style="display:flex; gap:0.35rem;">
               <button type="button" class="btn" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="unlinkCodexEntry('${book.id}', '${item.id}')" title="Відкріпити від цієї книги">Відкріпити</button>
               ${canDeleteGlobal ? `<button type="button" class="btn btn-danger" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="deleteCodexEntry('${book.id}', '${item.id}')" title="Видалити назавжди">✕</button>` : ''}
             </div>
@@ -1232,19 +1237,26 @@ window.openBookCodexModal = (bookId, returnChapterId = null) => {
       (item.title.toLowerCase().includes(q) || item.description.toLowerCase().includes(q))
     );
 
+    const user = getCurrentUser();
     box.innerHTML = filtered.length
-      ? filtered.map(item => `
-          <div class="comment-box" style="margin-top:0.65rem;">
-            <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.3rem;">
-              <div>
-                <strong style="font-size:1.02rem;">${escapeHtml(item.title)}</strong>
-                ${item.universe ? `<small class="subtitle" style="margin-left:0.4rem;">(${escapeHtml(item.universe)})</small>` : ''}
+      ? filtered.map(item => {
+          const canTip = item.author_id && (!user || user.id !== item.author_id);
+          return `
+            <div class="comment-box" style="margin-top:0.65rem;">
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.3rem;">
+                <div>
+                  <strong style="font-size:1.02rem;">${escapeHtml(item.title)}</strong>
+                  ${item.universe ? `<small class="subtitle" style="margin-left:0.4rem;">(${escapeHtml(item.universe)})</small>` : ''}
+                </div>
+                <div style="display:flex; gap:0.35rem; align-items:center;">
+                  ${canTip ? `<button type="button" class="btn" style="padding:0.2rem 0.55rem; font-size:0.78rem;" onclick="openTipModal('${escapeHtml(item.author_id)}', '${escapeHtml(item.author_name || 'Бард')}', 'Кодекс: ${escapeHtml(item.title)}')">🎁</button>` : ''}
+                  <span class="badge">${escapeHtml(item.category || 'Термін / Подія')}</span>
+                </div>
               </div>
-              <span class="badge">${escapeHtml(item.category || 'Термін / Подія')}</span>
+              <div style="white-space:pre-line; color:var(--text-main);">${escapeHtml(item.description)}</div>
             </div>
-            <div style="white-space:pre-line; color:var(--text-main);">${escapeHtml(item.description)}</div>
-          </div>
-        `).join('')
+          `;
+        }).join('')
       : '<p class="subtitle">Записів у кодексі за цим запитом поки немає.</p>';
   };
 
@@ -1358,6 +1370,8 @@ function renderGlobalCodex() {
       Array.isArray(b.codex_ids) && b.codex_ids.includes(entry.id)
     );
     const canDelete = user && (user.role === 'admin' || entry.author_id === user.id);
+    const canEdit = user && (user.role === 'admin' || entry.author_id === user.id);
+    const canTip = entry.author_id && (!user || user.id !== entry.author_id);
 
     return `
       <article class="card">
@@ -1377,9 +1391,13 @@ function renderGlobalCodex() {
               📚 Зустрічається у книгах: <strong>${linkedBooks.map(b => escapeHtml(b.title)).join(', ')}</strong>
             </div>
           ` : ''}
-          <div class="meta-row">
+          <div class="meta-row" style="gap:0.4rem; flex-wrap:wrap;">
             <span>✍️ ${renderAuthorLink(entry.author_name || 'Хранитель', entry.author_id || '')}</span>
-            ${canDelete ? `<button type="button" class="btn btn-danger" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="deleteGlobalCodexEntry('${entry.id}')">Видалити</button>` : ''}
+            <div style="display:flex; gap:0.35rem; flex-wrap:wrap;">
+              ${canTip ? `<button type="button" class="btn" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="openTipModal('${escapeHtml(entry.author_id)}', '${escapeHtml(entry.author_name || 'Бард')}', 'Кодекс: ${escapeHtml(entry.title)}')">🎁 Дарунок</button>` : ''}
+              ${canEdit ? `<button type="button" class="btn" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="openEditCodexModal('${entry.id}')" title="Редагувати запис">✏️</button>` : ''}
+              ${canEdit ? `<button type="button" class="btn btn-danger" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="deleteGlobalCodexEntry('${entry.id}')" title="Видалити запис">✕</button>` : ''}
+            </div>
           </div>
         </div>
       </article>
@@ -1453,6 +1471,73 @@ window.openCreateGlobalCodexModal = () => {
 document.getElementById('globalCodexSearch')?.addEventListener('input', renderGlobalCodex);
 document.getElementById('globalCodexCategory')?.addEventListener('change', renderGlobalCodex);
 document.getElementById('openNewGlobalCodexBtn')?.addEventListener('click', openCreateGlobalCodexModal);
+
+window.openEditCodexModal = (entryId, returnBookId = null) => {
+  const entry = (state.codexEntries || []).find(e => e.id === entryId);
+  const user = getCurrentUser();
+  if (!entry || !user) return;
+
+  const canEdit = user.role === 'admin' || entry.author_id === user.id;
+  if (!canEdit) return alert('Ви можете редагувати лише власні записи Кодексу.');
+
+  openModal(`
+    <span class="badge">✏️ Редагування запису Кодексу</span>
+    <h2 style="margin-top:0.5rem;">${escapeHtml(entry.title)}</h2>
+    <p class="subtitle">Зміни автоматично оновляться в усіх книгах, до яких підключена ця картка</p>
+
+    <form id="editCodexForm" class="stack-form" style="margin-top:1rem;">
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+        <input type="text" id="editCodexTitle" class="input" style="flex:1; min-width:180px;" required />
+        <select id="editCodexCategory" class="input">
+          <option value="Персонаж">Персонаж</option>
+          <option value="Локація">Локація</option>
+          <option value="Артефакт / Технологія">Артефакт / Технологія</option>
+          <option value="Термін / Подія">Термін / Подія</option>
+        </select>
+      </div>
+      <input type="text" id="editCodexUniverse" class="input" placeholder="Всесвіт або уточнення..." />
+      <textarea id="editCodexDesc" class="input textarea" rows="5" maxlength="1500" required></textarea>
+      <label class="subtitle" style="display:flex; align-items:center; gap:0.45rem; cursor:pointer;">
+        <input type="checkbox" id="editCodexShared" />
+        Зробити запис відкритим для всіх авторів порталу
+      </label>
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+        <button type="submit" class="btn btn-primary">Зберегти зміни</button>
+        ${returnBookId
+          ? `<button type="button" class="btn" onclick="openBookEditorModal('${returnBookId}')">Скасувати</button>`
+          : `<button type="button" class="btn" onclick="closeModal()">Скасувати</button>`}
+      </div>
+    </form>
+  `);
+
+  document.getElementById('editCodexTitle').value = entry.title || '';
+  document.getElementById('editCodexCategory').value = entry.category || 'Термін / Подія';
+  document.getElementById('editCodexUniverse').value = entry.universe || '';
+  document.getElementById('editCodexDesc').value = entry.description || '';
+  document.getElementById('editCodexShared').checked = Boolean(entry.is_shared);
+
+  document.getElementById('editCodexForm').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await TaliesinAPI.updateCodexEntry(entry.id, {
+        title: document.getElementById('editCodexTitle').value,
+        category: document.getElementById('editCodexCategory').value,
+        universe: document.getElementById('editCodexUniverse').value,
+        description: document.getElementById('editCodexDesc').value,
+        isShared: document.getElementById('editCodexShared').checked
+      });
+      await refresh();
+      if (returnBookId) {
+        openBookEditorModal(returnBookId);
+      } else {
+        closeModal();
+        renderGlobalCodex();
+      }
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+};
 
 window.openEditChapterModal = (bookId, chapterId) => {
   const book = state.books.find(b => b.id === bookId);
