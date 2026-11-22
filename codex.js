@@ -719,7 +719,7 @@ function renderCodexDiagram() {
 
     const svgPathsHtml = flatEdges.map(({ from, to }) => {
       const x1 = from.x;
-      const y1 = from.y + 58;
+      const y1 = from.y + 65;
       const x2 = to.x;
       const y2 = to.y;
       const midY = Math.round((y1 + y2) / 2);
@@ -731,7 +731,7 @@ function renderCodexDiagram() {
       .filter(e => e.to.roleLabel)
       .map(({ from, to }) => {
         const midX = Math.round((from.x + to.x) / 2);
-        const midY = Math.round((from.y + 58 + to.y) / 2);
+        const midY = Math.round((from.y + 65 + to.y) / 2);
         const color = getBranchColor(to.branchIdx);
         return `<span class="tree-2d-edge-tag" style="left:${midX}px; top:${midY}px; border-color:${color}; color:${color};">${escapeHtml(to.roleLabel)}</span>`;
       }).join('');
