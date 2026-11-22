@@ -51,6 +51,7 @@ window.renderSchemaArchitect = function () {
                       <button type="button" class="btn" style="padding:0.15rem 0.5rem; font-size:0.78rem;" onclick="toggleDisciplineFieldVisibility('${escapeHtml(d.id)}', ${idx})" title="${f.hidden ? 'Повернути у форму' : 'Приховати з форми (дані збережуться)'}">
                         ${f.hidden ? '👁️ Показати' : '🙈 Приховати'}
                       </button>
+                      <button type="button" class="btn btn-danger" style="padding:0.15rem 0.5rem; font-size:0.78rem;" onclick="deleteDisciplineField('${escapeHtml(d.id)}', ${idx})" title="Видалити параметр і дані назавжди">✕</button>
                     </div>
                   </div>
                 `).join('')
@@ -157,6 +158,42 @@ window.toggleDisciplineFieldVisibility = async (discId, index) => {
   fields[index] = { ...field, hidden: !field.hidden };
   try {
     await persistDisciplineFields(disc, fields);
+  } catch (err) {
+    alert(err.message);
+  }
+};
+
+window.deleteDisciplineField = async (discId, index) => {
+  const disc = getDisciplineById(discId);
+  const fields = [...(disc?.schema_fields || [])];
+  const field = fields[index];
+  if (!field) return;
+
+  // Збираємо цю дисципліну та всі її прямі підгалузі
+  const relatedDiscIds = new Set([disc.id]);
+  (state.codexDisciplines || []).forEach(d => {
+    if (d.parent_id === disc.id) relatedDiscIds.add(d.id);
+  });
+
+  // Шукаємо картки, де цей параметр уже заповнений
+  const affectedEntries = (state.codexEntries || []).filter(e => {
+    if (!relatedDiscIds.has(e.discipline_id)) return false;
+    const val = e.attributes?.[field.key];
+    return val !== undefined && String(val).trim() !== '';
+  });
+
+  const warningText = affectedEntries.length
+    ? `⚠️ УВАГА! Параметр «${field.label}» [${field.key}] зараз містить дані у ${affectedEntries.length} картках Кодексу (наприклад: ${affectedEntries.slice(0, 3).map(e => `«${e.title}»`).join(', ')}).\n\nУсі ці дані буде видалено НАЗАВЖДИ без можливості відновлення!\n\nВи точно впевнені, що хочете видалити цей параметр?`
+    : `Параметр «${field.label}» [${field.key}] ще не заповнений у жодній картці.\n\nВидалити його зі схеми науки «${disc.title}» назавжди?`;
+
+  if (!confirm(warningText)) return;
+
+  try {
+    if (affectedEntries.length) {
+      await TaliesinAPI.purgeCodexAttributeKey([...relatedDiscIds], field.key);
+    }
+    const nextFields = fields.filter((_, i) => i !== index);
+    await persistDisciplineFields(disc, nextFields);
   } catch (err) {
     alert(err.message);
   }
