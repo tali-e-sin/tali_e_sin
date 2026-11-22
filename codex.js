@@ -341,7 +341,7 @@ window.openEditCodexModal = (entryId, returnBookId = null) => {
   const renderEditDynamic = () => {
     const box = document.getElementById('editCodexDynamicFields');
     const disc = getDisciplineById(document.getElementById('editCodexDiscipline').value);
-    const fields = (Array.isArray(disc?.schema_fields) ? disc.schema_fields : []).filter(f => !f.hidden);    
+    const fields = (Array.isArray(disc?.schema_fields) ? disc.schema_fields : []).filter(f => !f.hidden);
     const curAttrs = entry.attributes || {};
     if (!fields.length) {
       box.classList.add('hidden');
@@ -365,7 +365,7 @@ window.openEditCodexModal = (entryId, returnBookId = null) => {
     const cleanUniverse = parseUniverseTags(document.getElementById('editCodexUniverse').value).join(', ');
     const discId = document.getElementById('editCodexDiscipline').value;
     const updatedAttrs = { ...(entry.attributes || {}) };
-    
+
     document.querySelectorAll('#editCodexDynamicFields .edit-dyn-attr').forEach(el => {
       updatedAttrs[el.dataset.attrKey] = el.value.trim();
     });
@@ -396,9 +396,45 @@ window.openEditCodexModal = (entryId, returnBookId = null) => {
 
 // --- Візуалізатор діаграм (Дерево, Піраміда/Кола, Хронологія, Мережа зв'язків) ---
 let ringsVisualSubmode = 'orbit'; // 'orbit' (концентричні кола) | 'pyramid' (піраміда)
+let treeVisualSubmode = '2d'; // '2d' (двомірний граф) | '1d' (одномірний список)
+let treeHighlightGenerations = true;
+let treeColorBranches = true;
+
+const BRANCH_PALETTE = [
+  '#c5962c', // Золото
+  '#2e8b57', // Смарагд
+  '#2b6cb0', // Сапфір
+  '#805ad5', // Аметист
+  '#c53030', // Рубін
+  '#0d9488', // Бірюза
+  '#d97706'  // Бурштин
+];
+
+const GENERATION_TINTS = [
+  'rgba(197, 150, 44, 0.07)',
+  'rgba(46, 139, 87, 0.07)',
+  'rgba(43, 108, 176, 0.07)',
+  'rgba(128, 90, 213, 0.07)',
+  'rgba(13, 148, 136, 0.07)'
+];
 
 window.setRingsSubmode = (mode) => {
   ringsVisualSubmode = mode;
+  renderCodexDiagram();
+};
+
+window.setTreeSubmode = (mode) => {
+  treeVisualSubmode = mode;
+  renderCodexDiagram();
+};
+
+window.toggleTreeGenerations = () => {
+  treeHighlightGenerations = !treeHighlightGenerations;
+  renderCodexDiagram();
+};
+
+window.toggleTreeBranchColors = () => {
+  treeColorBranches = !treeColorBranches;
   renderCodexDiagram();
 };
 
@@ -543,45 +579,189 @@ function renderCodexDiagram() {
   const rootEntry = entries.find(e => e.id === rootId);
   if (!rootEntry) return;
 
-  // 2. Дерево (родовід, види, наслідування)
+  // 2. Дерево (1D Список або 2D Граф із поколіннями та кольорами гілок)
   if (type === 'tree') {
-    const visited = new Set();
-    const buildTreeHtml = (nodeId, roleLabel = '') => {
-      if (visited.has(nodeId)) return '';
-      visited.add(nodeId);
-      const node = entries.find(e => e.id === nodeId);
-      if (!node) return '';
-
+    const getChildrenOf = (nodeId) => {
       const relChildren = relations
         .filter(r => r.source_id === nodeId && r.diagram_type === 'tree')
-        .map(r => ({ id: r.target_id, label: r.role_label }));
+        .map(r => ({ id: r.target_id, label: r.role_label || '' }));
       const forkChildren = entries
         .filter(e => e.parent_entry_id === nodeId)
-        .map(e => ({ id: e.id, label: 'Варіація / Відгалуження' }));
-
-      const allChildren = deduplicateList([...relChildren, ...forkChildren], c => c.id);
-
-      return `
-        <div class="diagram-tree-node">
-          <div class="diagram-node-card ${node.canon_status === 'official' ? 'is-official' : ''}" style="cursor:pointer;" onclick="openCodexNodePreview('${node.id}')" title="Натисніть для перегляду досьє">
-            ${roleLabel ? `<span class="badge" style="align-self:flex-start;">${escapeHtml(roleLabel)}</span>` : ''}
-            <div style="display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap;">
-              <strong>${escapeHtml(node.title)}</strong>
-              ${renderCanonBadge(node.canon_status)}
-            </div>
-            <small class="subtitle">${escapeHtml(getDisciplineTitle(node))}</small>
-          </div>
-          ${allChildren.map(ch => buildTreeHtml(ch.id, ch.label)).join('')}
-        </div>
-      `;
+        .map(e => ({ id: e.id, label: 'Варіація' }));
+      return deduplicateList([...relChildren, ...forkChildren], c => c.id);
     };
 
-    canvas.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
-        <h3 style="margin:0;">🌳 Ієрархічне дерево: ${escapeHtml(rootEntry.title)}</h3>
-        <small class="subtitle">Клікніть по будь-якому вузлу для відкриття досьє</small>
+    const visited = new Set();
+    const buildModel = (nodeId, depth = 0, branchIdx = null, roleLabel = '') => {
+      if (visited.has(nodeId)) return null;
+      visited.add(nodeId);
+      const node = entries.find(e => e.id === nodeId);
+      if (!node) return null;
+
+      const rawChildren = getChildrenOf(nodeId);
+      const children = rawChildren
+        .map((ch, idx) => {
+          const nextBranch = depth === 0 ? idx : branchIdx;
+          return buildModel(ch.id, depth + 1, nextBranch, ch.label);
+        })
+        .filter(Boolean);
+
+      return { node, depth, branchIdx, roleLabel, children };
+    };
+
+    const treeModel = buildModel(rootId, 0, null, '');
+    if (!treeModel) return;
+
+    const getBranchColor = (branchIdx) => {
+      if (!treeColorBranches || branchIdx === null || branchIdx === undefined) return 'var(--accent)';
+      return BRANCH_PALETTE[branchIdx % BRANCH_PALETTE.length];
+    };
+
+    const getGenBg = (depth) => {
+      if (!treeHighlightGenerations) return 'transparent';
+      return GENERATION_TINTS[depth % GENERATION_TINTS.length];
+    };
+
+    const toolbarHtml = `
+      <div class="tree-controls-bar">
+        <div>
+          <h3 style="margin:0;">🌳 Дерево: ${escapeHtml(rootEntry.title)}</h3>
+          <small class="subtitle">Клікніть по вузлу для відкриття досьє</small>
+        </div>
+        <div class="tree-toggles">
+          <div class="tabs" style="margin:0;">
+            <button type="button" class="tab-btn ${treeVisualSubmode === '2d' ? 'active' : ''}" onclick="setTreeSubmode('2d')">🕸️ 2D Граф</button>
+            <button type="button" class="tab-btn ${treeVisualSubmode === '1d' ? 'active' : ''}" onclick="setTreeSubmode('1d')">📋 1D Список</button>
+          </div>
+          <button type="button" class="btn ${treeHighlightGenerations ? 'btn-primary' : ''}" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="toggleTreeGenerations()">
+            🏛️ Покоління
+          </button>
+          <button type="button" class="btn ${treeColorBranches ? 'btn-primary' : ''}" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="toggleTreeBranchColors()">
+            🌈 Кольори гілок
+          </button>
+        </div>
       </div>
-      ${buildTreeHtml(rootId)}
+    `;
+
+    // --- Варіант А: 1D Одномірний список ---
+    if (treeVisualSubmode === '1d') {
+      const render1D = (item) => {
+        const bColor = getBranchColor(item.branchIdx);
+        const gBg = getGenBg(item.depth);
+        return `
+          <div class="diagram-tree-node tree-1d-gen-bg" style="border-left: 3px solid ${bColor}; background:${gBg};">
+            <div class="diagram-node-card" style="cursor:pointer; border-left: 4px solid ${bColor};" onclick="openCodexNodePreview('${item.node.id}')">
+              <div style="display:flex; gap:0.35rem; align-items:center; flex-wrap:wrap;">
+                ${treeHighlightGenerations ? `<span class="gen-badge">Покоління ${item.depth + 1}</span>` : ''}
+                ${item.roleLabel ? `<span class="badge" style="color:${bColor};">${escapeHtml(item.roleLabel)}</span>` : ''}
+              </div>
+              <div style="display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap; margin-top:0.2rem;">
+                <strong>${escapeHtml(item.node.title)}</strong>
+                ${renderCanonBadge(item.node.canon_status)}
+              </div>
+              <small class="subtitle">${escapeHtml(getDisciplineTitle(item.node))}</small>
+            </div>
+            ${item.children.map(ch => render1D(ch)).join('')}
+          </div>
+        `;
+      };
+
+      canvas.innerHTML = `${toolbarHtml}${render1D(treeModel)}`;
+      return;
+    }
+
+    // --- Варіант Б: 2D Двомірний граф (розгалуження в різні боки + SVG-зв'язки) ---
+    const NODE_SLOT_W = 205;
+    const LEVEL_H = 148;
+    let maxDepth = 0;
+
+    const measureLeaves = (item) => {
+      if (item.depth > maxDepth) maxDepth = item.depth;
+      if (!item.children.length) {
+        item.leafSpan = 1;
+        return 1;
+      }
+      item.leafSpan = item.children.reduce((sum, ch) => sum + measureLeaves(ch), 0);
+      return item.leafSpan;
+    };
+    const totalLeaves = measureLeaves(treeModel);
+
+    const flatNodes = [];
+    const flatEdges = [];
+
+    const layoutNodes = (item, leftSlot) => {
+      const centerSlot = leftSlot + item.leafSpan / 2;
+      item.x = Math.round(centerSlot * NODE_SLOT_W + 40);
+      item.y = item.depth * LEVEL_H + 28;
+      flatNodes.push(item);
+
+      let cursor = leftSlot;
+      item.children.forEach(ch => {
+        layoutNodes(ch, cursor);
+        flatEdges.push({ from: item, to: ch });
+        cursor += ch.leafSpan;
+      });
+    };
+    layoutNodes(treeModel, 0);
+
+    const stageWidth = Math.max(640, totalLeaves * NODE_SLOT_W + 80);
+    const stageHeight = (maxDepth + 1) * LEVEL_H + 30;
+
+    const genBandsHtml = Array.from({ length: maxDepth + 1 }, (_, d) => {
+      const top = d * LEVEL_H;
+      const bg = getGenBg(d);
+      return `
+        <div class="tree-2d-gen-band" style="top:${top}px; height:${LEVEL_H}px; background:${bg};">
+          ${treeHighlightGenerations ? `<span class="tree-2d-gen-label">Покоління ${d + 1}</span>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    const svgPathsHtml = flatEdges.map(({ from, to }) => {
+      const x1 = from.x;
+      const y1 = from.y + 72;
+      const x2 = to.x;
+      const y2 = to.y;
+      const midY = Math.round((y1 + y2) / 2);
+      const color = getBranchColor(to.branchIdx);
+      return `<path d="M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}" fill="none" stroke="${color}" stroke-width="2.4" stroke-opacity="0.85" />`;
+    }).join('');
+
+    const edgeTagsHtml = flatEdges
+      .filter(e => e.to.roleLabel)
+      .map(({ from, to }) => {
+        const midX = Math.round((from.x + to.x) / 2);
+        const midY = Math.round((from.y + 72 + to.y) / 2);
+        const color = getBranchColor(to.branchIdx);
+        return `<span class="tree-2d-edge-tag" style="left:${midX}px; top:${midY}px; border-color:${color}; color:${color};">${escapeHtml(to.roleLabel)}</span>`;
+      }).join('');
+
+    const nodes2DHtml = flatNodes.map(item => {
+      const color = getBranchColor(item.branchIdx);
+      return `
+        <button type="button" class="tree-2d-node" style="left:${item.x}px; top:${item.y}px; border-top: 4px solid ${color};"
+          onclick="openCodexNodePreview('${item.node.id}')" title="Відкрити досьє: ${escapeHtml(item.node.title)}">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:0.25rem;">
+            <strong style="font-size:0.86rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(item.node.title)}</strong>
+            ${item.node.canon_status === 'official' ? '<span>🏛️</span>' : ''}
+          </div>
+          <small class="subtitle" style="display:block; font-size:0.74rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:0.15rem;">
+            ${escapeHtml(getDisciplineTitle(item.node))}
+          </small>
+        </button>
+      `;
+    }).join('');
+
+    canvas.innerHTML = `
+      ${toolbarHtml}
+      <div class="tree-2d-viewport">
+        <div class="tree-2d-stage" style="width:${stageWidth}px; height:${stageHeight}px;">
+          ${genBandsHtml}
+          <svg class="tree-2d-svg" viewBox="0 0 ${stageWidth} ${stageHeight}">${svgPathsHtml}</svg>
+          ${edgeTagsHtml}
+          ${nodes2DHtml}
+        </div>
+      </div>
     `;
     return;
   }
