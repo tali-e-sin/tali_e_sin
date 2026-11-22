@@ -34,7 +34,7 @@
         <button class="nav-link" data-nav="books">Книги</button>
         <button class="nav-link" data-nav="codex">Кодекс</button>
         <button class="nav-link" data-nav="hall">Зала слави</button>
-        <button class="nav-link" data-nav="write">Написати</button>
+        <button class="nav-link" data-nav="write">🛠️ Майстерня</button>
         <button class="nav-link auth-only hidden" data-nav="profile">Профіль</button>
         <button class="nav-link admin-only hidden" data-nav="admin">Адмін-панель</button>
       </nav>
@@ -83,7 +83,6 @@
     </section>
 
     <!-- Секція книг -->
-    <!-- Секція книг -->
     <section id="view-books" class="view-section hidden">
       <div class="section-header">
         <div>
@@ -107,26 +106,56 @@
       </div>
       <div id="booksList" class="cards-grid"></div>
     </section>
+
+    <!-- Секція Кодексу (Таблиця/Картки + Діаграми) -->
     <section id="view-codex" class="view-section hidden">
-  <div class="section-header">
-    <div>
-      <h1>📖 Спільний Кодекс Світів</h1>
-      <p class="subtitle">Енциклопедія рас, локацій, артефактів та понять усіх всесвітів порталу</p>
-    </div>
-    <div class="filters">
-      <input type="search" id="globalCodexSearch" class="input" placeholder="Пошук за назвою, описом або світом..." />
-      <select id="globalCodexCategory" class="input">
-        <option value="all">Усі категорії</option>
-        <option value="Персонаж">Персонаж</option>
-        <option value="Локація">Локація</option>
-        <option value="Артефакт / Технологія">Артефакт / Технологія</option>
-        <option value="Термін / Подія">Термін / Подія</option>
-      </select>
-      <button type="button" id="openNewGlobalCodexBtn" class="btn btn-primary auth-only hidden">+ Новий запис</button>
-    </div>
-  </div>
-  <div id="globalCodexList" class="cards-grid"></div>
-</section>
+      <div class="section-header">
+        <div>
+          <h1>📖 Кодекс Світів та Знань</h1>
+          <p class="subtitle">Онтологія рас, родоводів, локацій, артефактів та фундаментальних наук</p>
+        </div>
+        <div class="filters">
+          <div class="tabs" style="margin:0;">
+            <button type="button" class="tab-btn active" id="codexModeCardsBtn" data-codex-mode="cards">📋 Картки</button>
+            <button type="button" class="tab-btn" id="codexModeDiagramsBtn" data-codex-mode="diagrams">🌳 Діаграми</button>
+          </div>
+          <button type="button" id="openWorkshopCodexBtn" class="btn btn-primary auth-only hidden">+ Створити в Майстерні</button>
+        </div>
+      </div>
+
+      <!-- Фільтри режиму карток / таблиці -->
+      <div id="codexCardsToolbar" class="filters" style="margin-bottom:1.2rem;">
+        <input type="search" id="globalCodexSearch" class="input" placeholder="Пошук за назвою, описом, #світом або #книгою..." style="flex:1; min-width:200px;" />
+        <select id="globalCodexDiscipline" class="input">
+          <option value="all">Усі науки та галузі</option>
+        </select>
+        <select id="globalCodexCanonFilter" class="input">
+          <option value="all">Усі статуси (Канон + Авторські)</option>
+          <option value="official">🏛️ Лише Канон (офіційні)</option>
+          <option value="community">🪶 Авторські світи</option>
+        </select>
+      </div>
+
+      <div id="globalCodexList" class="cards-grid"></div>
+
+      <!-- Режим візуальних діаграм -->
+      <div id="codexDiagramsView" class="hidden">
+        <div class="editor-card" style="margin-bottom:1.2rem;">
+          <div class="filters">
+            <select id="diagramTypeSelect" class="input">
+              <option value="tree">🌳 Дерево (Родовід / Види / Таксономія)</option>
+              <option value="disciplines">🧬 Дерево фундаментальних наук</option>
+              <option value="rings">🎯 Кола / Соціальна піраміда (Гільдії та структури)</option>
+              <option value="timeline">⏳ Хронологія володіння (Артефакти та локації)</option>
+            </select>
+            <select id="diagramRootSelect" class="input" style="flex:1; min-width:220px;">
+              <option value="">-- Оберіть кореневу сутність або структуру --</option>
+            </select>
+          </div>
+        </div>
+        <div id="diagramCanvasArea" class="editor-card"></div>
+      </div>
+    </section>
 
     <!-- Секція Зали слави -->
     <section id="view-hall" class="view-section hidden">
@@ -139,14 +168,24 @@
       <div id="hallOfFameContent" class="cards-grid"></div>
     </section>
 
-    <!-- Секція створення контенту -->
+    <!-- Секція Майстерні (Статті, Книги, Кодекс, Архітектор баз для адмінів) -->
     <section id="view-write" class="view-section hidden">
+      <div class="section-header">
+        <div>
+          <h1>🛠️ Майстерня Барда та Хранителя</h1>
+          <p class="subtitle">Створюйте сувої, книги, картки Кодексу, зв'язки діаграм та налаштовуйте параметри баз знань</p>
+        </div>
+      </div>
+
       <div class="editor-card">
-        <div class="tabs">
-          <button class="tab-btn active" data-editor="article">Нова стаття</button>
-          <button class="tab-btn" data-editor="book">Нова книга / глава</button>
+        <div class="tabs" style="flex-wrap:wrap;">
+          <button type="button" class="tab-btn active" data-editor="article">📜 Стаття</button>
+          <button type="button" class="tab-btn" data-editor="book">📚 Книга / Глава</button>
+          <button type="button" class="tab-btn" data-editor="codex">📖 Кодекс та зв'язки</button>
+          <button type="button" class="tab-btn admin-only hidden" data-editor="schema">⚙️ Архітектор баз (Адмін)</button>
         </div>
 
+        <!-- 1. Вкладка: Стаття -->
         <form id="articleForm" class="stack-form">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap;">
             <h2 style="margin:0;">Опублікувати статтю</h2>
@@ -165,6 +204,7 @@
           <button type="submit" class="btn btn-primary">Опублікувати статтю</button>
         </form>
 
+        <!-- 2. Вкладка: Книга / Глава -->
         <form id="chapterForm" class="stack-form hidden">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap;">
             <h2 style="margin:0;">Додати главу до книги</h2>
@@ -181,6 +221,92 @@
           <textarea id="chapContent" class="input textarea" rows="8" placeholder="Текст глави..." required></textarea>
           <button type="submit" class="btn btn-primary">Зберегти главу</button>
         </form>
+
+        <!-- 3. Вкладка: Робота з Кодексом та зв'язками -->
+        <div id="workshopCodexPanel" class="hidden">
+          <h2>📖 Створення картки Кодексу</h2>
+          <p class="subtitle" style="margin-bottom:1rem;">Оберіть науку, вкажіть прототип («Взято за основу») та заповніть специфічні характеристики сутності</p>
+
+          <form id="workshopCodexForm" class="stack-form">
+            <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
+              <input type="text" id="wsCodexTitle" class="input" placeholder="Назва сутності (напр., Конунг Рагнар або Ельфи Авену)" style="flex:1; min-width:200px;" required />
+              <select id="wsCodexDiscipline" class="input" style="min-width:210px;" required></select>
+            </div>
+
+            <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
+              <select id="wsCodexParentEntry" class="input" style="flex:1; min-width:220px;">
+                <option value="">🧬 Взято за основу (необов'язково — напр., Гуманоїди)</option>
+              </select>
+              <select id="wsCodexCanonStatus" class="input">
+                <option value="community">🪶 Авторський запис</option>
+                <option value="pending">⏳ Подати на узгодження як Канон</option>
+                <option value="official" class="admin-only hidden">🏛️ Офіційний Канон (Адмін)</option>
+              </select>
+            </div>
+
+            <input type="text" id="wsCodexUniverse" class="input" maxlength="120" placeholder="Світи-теги через кому або # (напр., #ІсторіяВікінгів, #ХронікиАвену)" />
+
+            <!-- Контейнер для динамічних полів обраної дисципліни -->
+            <div id="wsCodexDynamicFields" class="stack-form" style="padding:0.9rem; background:var(--bg-subtle); border-radius:12px;"></div>
+
+            <textarea id="wsCodexDesc" class="input textarea" rows="4" maxlength="2000" placeholder="Детальний опис, історія, особливості..." required></textarea>
+
+            <label class="subtitle" style="display:flex; align-items:center; gap:0.45rem; cursor:pointer;">
+              <input type="checkbox" id="wsCodexShared" checked />
+              Зробити запис видимим іншим авторам порталу
+            </label>
+
+            <button type="submit" class="btn btn-primary" style="align-self:flex-start;">Зберегти картку в Кодекс</button>
+          </form>
+
+          <hr style="margin:1.8rem 0; border-color:var(--border);" />
+
+          <h2>🔗 Конструктор зв'язків для діаграм</h2>
+          <p class="subtitle" style="margin-bottom:1rem;">Пов'язуйте персонажів у родоводи, визначайте рівні у гільдіях (Ядро → Клієнти) або фіксуйте історію власників артефакту</p>
+
+          <form id="workshopRelationForm" class="stack-form">
+            <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
+              <select id="wsRelSource" class="input" style="flex:1; min-width:190px;" required>
+                <option value="">-- Сутність А (Предок / Гільдія / Артефакт) --</option>
+              </select>
+              <select id="wsRelDiagramType" class="input">
+                <option value="tree">🌳 Дерево (Родовід / Вид / Локація)</option>
+                <option value="rings">🎯 Кола / Піраміда (Структура організації)</option>
+                <option value="timeline">⏳ Хронологія (Зміна власників / правителів)</option>
+                <option value="web">🕸️ Вільний зв'язок (Союз / Ворог / Творець)</option>
+              </select>
+              <select id="wsRelTarget" class="input" style="flex:1; min-width:190px;" required>
+                <option value="">-- Сутність Б (Нащадок / Учасник / Власник) --</option>
+              </select>
+            </div>
+
+            <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
+              <input type="text" id="wsRelRoleLabel" class="input" placeholder="Роль або підпис (напр., Син, Ядро, Клієнт, Перший власник)" style="flex:1; min-width:180px;" />
+              <input type="number" id="wsRelTierLevel" class="input" min="1" max="10" value="1" title="Рівень у піраміді/колі (1 = центр/вершина)" style="width:130px;" />
+              <input type="text" id="wsRelPeriodLabel" class="input" placeholder="Період / Епоха (напр., 865–900 рр.)" style="flex:1; min-width:160px;" />
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="align-self:flex-start;">+ Додати зв'язок до графа</button>
+          </form>
+
+          <div id="workshopRelationsList" style="margin-top:1.2rem;"></div>
+        </div>
+
+        <!-- 4. Вкладка: Архітектор баз даних (лише для Адмінів) -->
+        <div id="workshopSchemaPanel" class="hidden">
+          <h2>⚙️ Архітектор дисциплін та параметрів баз</h2>
+          <p class="subtitle" style="margin-bottom:1rem;">
+            Налаштовуйте дерево наук, наслідування між ними та динамічні поля карток.
+            <strong>Усі раніше заповнені дані користувачів зберігаються без змін.</strong>
+          </p>
+
+          <div id="schemaDisciplinesManager"></div>
+
+          <hr style="margin:1.8rem 0; border-color:var(--border);" />
+          <h3>🏛️ Черга верифікації в Канон</h3>
+          <p class="subtitle" style="margin-bottom:0.8rem;">Записи, подані авторами на статус офіційного портального канону</p>
+          <div id="schemaCanonQueue"></div>
+        </div>
       </div>
     </section>
 
