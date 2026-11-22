@@ -32,6 +32,7 @@
       <nav class="main-nav" aria-label="Головна навігація">
         <button class="nav-link active" data-nav="articles">Статті</button>
         <button class="nav-link" data-nav="books">Книги</button>
+        <button class="nav-link" data-nav="codex">Кодекс</button>
         <button class="nav-link" data-nav="hall">Зала слави</button>
         <button class="nav-link" data-nav="write">Написати</button>
         <button class="nav-link auth-only hidden" data-nav="profile">Профіль</button>
@@ -82,15 +83,50 @@
     </section>
 
     <!-- Секція книг -->
+    <!-- Секція книг -->
     <section id="view-books" class="view-section hidden">
       <div class="section-header">
         <div>
           <h1>Бібліотека Барда</h1>
           <p class="subtitle">Перші глави відкриті для всіх; наступні розблоковуються за монети</p>
         </div>
+        <div class="filters">
+          <input type="search" id="bookSearch" class="input" placeholder="Пошук за назвою, автором чи описом..." />
+          <select id="bookFilter" class="input">
+            <option value="all">Усі книги</option>
+            <option value="free">З безкоштовними главами</option>
+            <option value="favorites">В обраному</option>
+            <option value="codex">З Кодексом світу</option>
+          </select>
+          <select id="bookSort" class="input">
+            <option value="newest">Найновіші</option>
+            <option value="rating">Найвищий рейтинг</option>
+            <option value="chapters">Найбільше глав</option>
+          </select>
+        </div>
       </div>
       <div id="booksList" class="cards-grid"></div>
     </section>
+    <section id="view-codex" class="view-section hidden">
+  <div class="section-header">
+    <div>
+      <h1>📖 Спільний Кодекс Світів</h1>
+      <p class="subtitle">Енциклопедія рас, локацій, артефактів та понять усіх всесвітів порталу</p>
+    </div>
+    <div class="filters">
+      <input type="search" id="globalCodexSearch" class="input" placeholder="Пошук за назвою, описом або світом..." />
+      <select id="globalCodexCategory" class="input">
+        <option value="all">Усі категорії</option>
+        <option value="Персонаж">Персонаж</option>
+        <option value="Локація">Локація</option>
+        <option value="Артефакт / Технологія">Артефакт / Технологія</option>
+        <option value="Термін / Подія">Термін / Подія</option>
+      </select>
+      <button type="button" id="openNewGlobalCodexBtn" class="btn btn-primary auth-only hidden">+ Новий запис</button>
+    </div>
+  </div>
+  <div id="globalCodexList" class="cards-grid"></div>
+</section>
 
     <!-- Секція Зали слави -->
     <section id="view-hall" class="view-section hidden">
