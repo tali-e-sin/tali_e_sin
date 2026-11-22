@@ -26,7 +26,7 @@ window.renderSchemaArchitect = function () {
     ${disciplines.map(d => {
       const fields = Array.isArray(d.schema_fields) ? d.schema_fields : [];
       return `
-        <div class="chapter-item" style="flex-direction:column; align-items:stretch; gap:0.5rem; padding:0.9rem;">
+        <div class="chapter-item" style="flex-direction:column; align-items:stretch; gap:0.65rem; padding:0.95rem;">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
             <div>
               <strong>${escapeHtml(d.title)}</strong> <small class="subtitle">[${escapeHtml(d.id)}]</small>
@@ -34,9 +34,26 @@ window.renderSchemaArchitect = function () {
             </div>
             <button type="button" class="btn" style="font-size:0.82rem;" onclick="openAddDisciplineFieldModal('${escapeHtml(d.id)}')">+ Додати параметр поля</button>
           </div>
-          <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+
+          <div style="display:flex; flex-direction:column; gap:0.4rem;">
             ${fields.length
-              ? fields.map(f => `<span class="badge">${escapeHtml(f.label)} (${escapeHtml(f.key)})</span>`).join('')
+              ? fields.map((f, idx) => `
+                  <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; padding:0.4rem 0.65rem; border-radius:8px; background:var(--bg-surface); border:1px solid var(--border); ${f.hidden ? 'opacity:0.55;' : ''}">
+                    <div>
+                      <strong>${escapeHtml(f.label)}</strong>
+                      <small class="subtitle">[${escapeHtml(f.key)} · ${escapeHtml(f.type || 'text')}]</small>
+                      ${f.hidden ? `<span class="badge" style="margin-left:0.35rem;">Приховано з форми</span>` : ''}
+                    </div>
+                    <div style="display:flex; gap:0.25rem; align-items:center;">
+                      <button type="button" class="btn" style="padding:0.15rem 0.45rem; font-size:0.78rem;" ${idx === 0 ? 'disabled' : ''} onclick="moveDisciplineField('${escapeHtml(d.id)}', ${idx}, -1)" title="Вгору">▲</button>
+                      <button type="button" class="btn" style="padding:0.15rem 0.45rem; font-size:0.78rem;" ${idx === fields.length - 1 ? 'disabled' : ''} onclick="moveDisciplineField('${escapeHtml(d.id)}', ${idx}, 1)" title="Вниз">▼</button>
+                      <button type="button" class="btn" style="padding:0.15rem 0.5rem; font-size:0.78rem;" onclick="renameDisciplineField('${escapeHtml(d.id)}', ${idx})" title="Перейменувати підпис">✏️</button>
+                      <button type="button" class="btn" style="padding:0.15rem 0.5rem; font-size:0.78rem;" onclick="toggleDisciplineFieldVisibility('${escapeHtml(d.id)}', ${idx})" title="${f.hidden ? 'Повернути у форму' : 'Приховати з форми (дані збережуться)'}">
+                        ${f.hidden ? '👁️ Показати' : '🙈 Приховати'}
+                      </button>
+                    </div>
+                  </div>
+                `).join('')
               : '<small class="subtitle">Без додаткових параметрів</small>'}
           </div>
         </div>
@@ -84,6 +101,67 @@ window.renderSchemaArchitect = function () {
   }
 };
 
+async function persistDisciplineFields(disc, nextFields) {
+  await TaliesinAPI.saveCodexDiscipline({
+    id: disc.id,
+    title: disc.title,
+    parentId: disc.parent_id,
+    dependsOn: disc.depends_on || [],
+    defaultDiagram: disc.default_diagram,
+    schemaFields: nextFields,
+    sortOrder: disc.sort_order
+  });
+  await refresh();
+  renderSchemaArchitect();
+  if (typeof initWorkshopCodex === 'function') initWorkshopCodex();
+}
+
+window.moveDisciplineField = async (discId, index, delta) => {
+  const disc = getDisciplineById(discId);
+  if (!disc) return;
+  const fields = [...(disc.schema_fields || [])];
+  const targetIdx = index + delta;
+  if (targetIdx < 0 || targetIdx >= fields.length) return;
+
+  [fields[index], fields[targetIdx]] = [fields[targetIdx], fields[index]];
+  try {
+    await persistDisciplineFields(disc, fields);
+  } catch (err) {
+    alert(err.message);
+  }
+};
+
+window.renameDisciplineField = async (discId, index) => {
+  const disc = getDisciplineById(discId);
+  const fields = [...(disc?.schema_fields || [])];
+  const field = fields[index];
+  if (!field) return;
+
+  const nextLabel = prompt(`Нова назва для параметра [${field.key}]:`, field.label);
+  if (nextLabel === null || !nextLabel.trim()) return;
+
+  fields[index] = { ...field, label: nextLabel.trim() };
+  try {
+    await persistDisciplineFields(disc, fields);
+  } catch (err) {
+    alert(err.message);
+  }
+};
+
+window.toggleDisciplineFieldVisibility = async (discId, index) => {
+  const disc = getDisciplineById(discId);
+  const fields = [...(disc?.schema_fields || [])];
+  const field = fields[index];
+  if (!field) return;
+
+  fields[index] = { ...field, hidden: !field.hidden };
+  try {
+    await persistDisciplineFields(disc, fields);
+  } catch (err) {
+    alert(err.message);
+  }
+};
+
 window.openAddDisciplineFieldModal = (discId) => {
   const disc = getDisciplineById(discId);
   if (!disc) return;
@@ -111,22 +189,11 @@ window.openAddDisciplineFieldModal = (discId) => {
     if (!cleanKey || !label) return;
 
     const existing = Array.isArray(disc.schema_fields) ? disc.schema_fields : [];
-    const nextFields = deduplicateList([...existing, { key: cleanKey, label, type }], f => f.key);
+    const nextFields = deduplicateList([...existing, { key: cleanKey, label, type, hidden: false }], f => f.key);
 
     try {
-      await TaliesinAPI.saveCodexDiscipline({
-        id: disc.id,
-        title: disc.title,
-        parentId: disc.parent_id,
-        dependsOn: disc.depends_on || [],
-        defaultDiagram: disc.default_diagram,
-        schemaFields: nextFields,
-        sortOrder: disc.sort_order
-      });
       closeModal();
-      await refresh();
-      renderSchemaArchitect();
-      initWorkshopCodex();
+      await persistDisciplineFields(disc, nextFields);
     } catch (err) {
       alert(err.message);
     }
