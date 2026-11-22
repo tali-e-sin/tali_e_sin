@@ -1053,9 +1053,10 @@ window.readChapter = async (bookId, chapterId) => {
     const nextIsOpen = nextChap && (nextChap.price === 0 || unlocked.includes(nextChap.id) || isAuthor);
     const minutes = estimateReadingMinutes(chap.content);
 
-    if (user) {
+    const freshUser = getCurrentUser();
+    if (freshUser) {
       await TaliesinAPI.saveReadingBookmark(bookId, chapterId);
-      user.readingProgress = { ...(user.readingProgress || {}), [bookId]: chapterId };
+      freshUser.readingProgress = { ...(freshUser.readingProgress || {}), [bookId]: chapterId };
       renderBooks();
     }
 
@@ -1170,6 +1171,15 @@ window.openBookEditorModal = (bookId) => {
       <button type="submit" class="btn btn-primary" style="align-self:flex-start;">+ Створити та додати до книги</button>
     </form>
 
+    <input type="text" id="codexNewUniverse" class="input" maxlength="45" placeholder="Всесвіт або уточнення (напр., Загальний архетип, Хроніки Авену)" />
+      <textarea id="codexNewDesc" class="input textarea" rows="2" maxlength="800" placeholder="Опис, особливості або відмінності у вашому світі..." required></textarea>
+      <label class="subtitle" style="display:flex; align-items:center; gap:0.45rem; cursor:pointer;">
+        <input type="checkbox" id="codexIsShared" checked />
+        Зробити запис доступним іншим авторам у спільній енциклопедії
+      </label>
+      <button type="submit" class="btn btn-primary" style="align-self:flex-start;">+ Створити та додати до книги</button>
+    </form>
+
     <div>
       ${bookCodex.map(item => {
         const canDeleteGlobal = user && (user.role === 'admin' || item.author_id === user.id);
@@ -1178,15 +1188,11 @@ window.openBookEditorModal = (bookId) => {
             <div>
               <strong>${escapeHtml(item.title)}</strong>
               <span class="badge">${escapeHtml(item.category || '')}</span>
-              ${item.universe ? `<small class="subtitle" style="margin-left:0.35rem;">· ${escapeHtml(item.universe)}</small>` : ''}
+              ${item.universe ? `<small class="subtitle" style="margin-left:0.35rem; color:var(--accent); font-weight:600;">${escapeHtml(formatUniverseTag(item.universe))}</small>` : ''}
               <div class="subtitle" style="font-size:0.84rem; margin-top:0.2rem;">${escapeHtml(item.description)}</div>
             </div>
             <div style="display:flex; gap:0.35rem;">
               ${canDeleteGlobal ? `<button type="button" class="btn" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="openEditCodexModal('${item.id}', '${book.id}')" title="Редагувати запис">✏️</button>` : ''}
-              <button type="button" class="btn" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="unlinkCodexEntry('${book.id}', '${item.id}')" title="Відкріпити від цієї книги">Відкріпити</button>
-              ${canDeleteGlobal ? `<button type="button" class="btn btn-danger" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="deleteCodexEntry('${book.id}', '${item.id}')" title="Видалити назавжди">✕</button>` : ''}
-            </div>
-            <div style="display:flex; gap:0.35rem;">
               <button type="button" class="btn" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="unlinkCodexEntry('${book.id}', '${item.id}')" title="Відкріпити від цієї книги">Відкріпити</button>
               ${canDeleteGlobal ? `<button type="button" class="btn btn-danger" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="deleteCodexEntry('${book.id}', '${item.id}')" title="Видалити назавжди">✕</button>` : ''}
             </div>
@@ -1261,7 +1267,9 @@ window.openBookCodexModal = (bookId, returnChapterId = null) => {
               <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.3rem;">
                 <div>
                   <strong style="font-size:1.02rem;">${escapeHtml(item.title)}</strong>
-                  ${item.universe ? `<small class="subtitle" style="margin-left:0.35rem; color:var(--accent); font-weight:600;">${escapeHtml(formatUniverseTag(item.universe))}</small>` : ''}                <div style="display:flex; gap:0.35rem; align-items:center;">
+                  ${item.universe ? `<small class="subtitle" style="margin-left:0.35rem; color:var(--accent); font-weight:600;">${escapeHtml(formatUniverseTag(item.universe))}</small>` : ''}
+                </div>
+                <div style="display:flex; gap:0.35rem; align-items:center;">
                   ${canTip ? `<button type="button" class="btn" style="padding:0.2rem 0.55rem; font-size:0.78rem;" onclick="openTipModal('${escapeHtml(item.author_id)}', '${escapeHtml(item.author_name || 'Бард')}', 'Кодекс: ${escapeHtml(item.title)}')">🎁</button>` : ''}
                   <span class="badge">${escapeHtml(item.category || 'Термін / Подія')}</span>
                 </div>
@@ -1357,7 +1365,7 @@ function renderGlobalCodex() {
   if (!container || !state) return;
 
   const user = getCurrentUser();
-  const q = (document.getElementById('globalCodexSearch')?.value || '').toLowerCase();
+  const q = (document.getElementById('globalCodexSearch')?.value || '').toLowerCase().replace(/^#+/, '').trim();
   const cat = document.getElementById('globalCodexCategory')?.value || 'all';
 
   const visibleEntries = (state.codexEntries || []).filter(e => {
@@ -1385,8 +1393,7 @@ function renderGlobalCodex() {
     const canDelete = user && (user.role === 'admin' || entry.author_id === user.id);
     const canEdit = user && (user.role === 'admin' || entry.author_id === user.id);
     const canTip = entry.author_id && (!user || user.id !== entry.author_id);
-    const q = (document.getElementById('globalCodexSearch')?.value || '').toLowerCase().replace(/^#+/, '').trim();
-
+    
     return `
       <article class="card">
         <div>
@@ -1455,8 +1462,7 @@ window.openCreateGlobalCodexModal = () => {
           <option value="Термін / Подія">Термін / Подія</option>
         </select>
       </div>
-      <input type="text" id="gCodexUniverse" class="input" placeholder="Всесвіт (напр., Загальний архетип, Хроніки Авену...)" />
-      <textarea id="gCodexDesc" class="input textarea" rows="5" maxlength="1500" placeholder="Детальний опис, риси, історія або особливості..." required></textarea>
+        <input type="text" id="gCodexUniverse" class="input" maxlength="45" placeholder="Всесвіт (напр., Загальний архетип, Хроніки Авену...)" />      <textarea id="gCodexDesc" class="input textarea" rows="5" maxlength="1500" placeholder="Детальний опис, риси, історія або особливості..." required></textarea>
       <label class="subtitle" style="display:flex; align-items:center; gap:0.45rem; cursor:pointer;">
         <input type="checkbox" id="gCodexShared" checked />
         Зробити запис відкритим для всіх авторів порталу
@@ -1503,8 +1509,7 @@ window.openEditCodexModal = (entryId, returnBookId = null) => {
 
     <form id="editCodexForm" class="stack-form" style="margin-top:1rem;">
       <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-        <input type="text" id="editCodexTitle" class="input" style="flex:1; min-width:180px;" required />
-        <select id="editCodexCategory" class="input">
+        <input type="text" id="editCodexUniverse" class="input" maxlength="45" placeholder="Всесвіт або уточнення..." />        <select id="editCodexCategory" class="input">
           <option value="Персонаж">Персонаж</option>
           <option value="Локація">Локація</option>
           <option value="Артефакт / Технологія">Артефакт / Технологія</option>
