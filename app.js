@@ -355,10 +355,17 @@ function escapeHtml(str) {
 }
 
 function parseUniverseTags(universe) {
+  const seen = new Set();
   return String(universe || '')
     .split(/[,#]+/)
     .map(t => t.trim())
-    .filter(Boolean);
+    .filter(t => {
+      if (!t) return false;
+      const key = t.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function renderUniverseTags(universe, interactive = false) {
@@ -1265,18 +1272,17 @@ window.openBookCodexModal = (bookId, returnChapterId = null) => {
     box.innerHTML = filtered.length
       ? filtered.map(item => {
           const canTip = item.author_id && (!user || user.id !== item.author_id);
+          const universeTagsHtml = renderUniverseTags(item.universe, false);
           return `
             <div class="comment-box" style="margin-top:0.65rem;">
-              <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.3rem;">
-                <div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">
-                  <strong style="font-size:1.02rem;">${escapeHtml(item.title)}</strong>
-                  ${renderUniverseTags(item.universe, false)}
-                </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.35rem;">
+                <strong style="font-size:1.05rem;">${escapeHtml(item.title)}</strong>
                 <div style="display:flex; gap:0.35rem; align-items:center;">
                   ${canTip ? `<button type="button" class="btn" style="padding:0.2rem 0.55rem; font-size:0.78rem;" onclick="openTipModal('${escapeHtml(item.author_id)}', '${escapeHtml(item.author_name || 'Бард')}', 'Кодекс: ${escapeHtml(item.title)}')">🎁</button>` : ''}
                   <span class="badge">${escapeHtml(item.category || 'Термін / Подія')}</span>
                 </div>
               </div>
+              ${universeTagsHtml ? `<div style="display:flex; gap:0.35rem; flex-wrap:wrap; margin-bottom:0.45rem;">${universeTagsHtml}</div>` : ''}
               <div style="white-space:pre-line; color:var(--text-main);">${escapeHtml(item.description)}</div>
             </div>
           `;
@@ -1401,25 +1407,41 @@ function renderGlobalCodex() {
     const linkedBooks = (state.books || []).filter(b =>
       Array.isArray(b.codex_ids) && b.codex_ids.includes(entry.id)
     );
+
+    // Унікальні назви книг, щоб не дублювалися однакові теги
+    const uniqueBookTitles = [...new Set(linkedBooks.map(b => (b.title || '').trim()).filter(Boolean))];
+    const universeTagsHtml = renderUniverseTags(entry.universe, true);
+
     const canEdit = user && (user.role === 'admin' || entry.author_id === user.id);
     const canTip = entry.author_id && (!user || user.id !== entry.author_id);
 
     return `
       <article class="card">
         <div>
-          <div class="meta-row" style="margin-bottom:0.6rem; gap:0.35rem; flex-wrap:wrap; align-items:flex-start;">
-            <span class="badge">${escapeHtml(entry.category || 'Термін / Подія')}</span>
-            ${renderUniverseTags(entry.universe, true)}
-            ${!entry.is_shared ? `<span class="badge">🔒 Приватний</span>` : ''}
+          <!-- 1. Назва + Категорія -->
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.5rem;">
+            <h3 style="margin:0;">${escapeHtml(entry.title)}</h3>
+            <div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">
+              <span class="badge">${escapeHtml(entry.category || 'Термін / Подія')}</span>
+              ${!entry.is_shared ? `<span class="badge">🔒 Приватний</span>` : ''}
+            </div>
           </div>
-          <h3>${escapeHtml(entry.title)}</h3>
-          <p style="white-space:pre-line; color:var(--text-main);">${escapeHtml(entry.description)}</p>
+
+          <!-- 2. Світи (теги) -->
+          ${universeTagsHtml ? `
+            <div style="display:flex; gap:0.35rem; flex-wrap:wrap; margin-bottom:0.7rem;">
+              ${universeTagsHtml}
+            </div>
+          ` : ''}
+
+          <!-- 3. Опис -->
+          <p style="white-space:pre-line; color:var(--text-main); margin:0;">${escapeHtml(entry.description)}</p>
         </div>
 
         <div>
-          ${linkedBooks.length ? `
+          ${uniqueBookTitles.length ? `
             <div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center; margin-bottom:0.75rem;">
-              ${linkedBooks.map(b => `<button type="button" class="universe-tag book-tag" onclick="filterCodexByUniverse('${escapeHtml(b.title)}')" title="Фільтрувати за книгою «${escapeHtml(b.title)}»">📚 #${escapeHtml(b.title)}</button>`).join('')}
+              ${uniqueBookTitles.map(title => `<button type="button" class="universe-tag book-tag" onclick="filterCodexByUniverse('${escapeHtml(title)}')" title="Фільтрувати за книгою «${escapeHtml(title)}»">📚 #${escapeHtml(title)}</button>`).join('')}
             </div>
           ` : ''}
           <div class="meta-row" style="gap:0.4rem; flex-wrap:wrap;">
@@ -1435,7 +1457,6 @@ function renderGlobalCodex() {
     `;
   }).join('');
 }
-
 window.deleteGlobalCodexEntry = async (entryId) => {
   if (!confirm('Видалити цей запис зі спільного Кодексу порталу?')) return;
   try {
