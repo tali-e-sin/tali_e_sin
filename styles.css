@@ -624,3 +624,131 @@ h1, h2, h3, .brand-name {
 .universe-tag.book-tag:hover {
   border-color: var(--accent);
 }
+
+/* --- Канон, наслідування та атрибути Кодексу --- */
+.canon-badge-official {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+
+.canon-badge-pending {
+  border: 1px dashed var(--accent);
+  color: var(--accent);
+}
+
+.lineage-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  cursor: pointer;
+  margin-bottom: 0.55rem;
+}
+
+.lineage-pill:hover {
+  border-color: var(--accent);
+}
+
+.codex-attrs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.45rem;
+  margin: 0.65rem 0;
+  padding: 0.6rem 0.75rem;
+  background: var(--bg-subtle);
+  border-radius: 10px;
+  font-size: 0.84rem;
+}
+
+.codex-attr-item strong {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* --- Візуалізатор діаграм (Дерево, Піраміда/Кола, Хронологія) --- */
+.diagram-tree-node {
+  border-left: 2px solid var(--accent);
+  padding-left: 1rem;
+  margin-left: 0.6rem;
+  margin-top: 0.65rem;
+}
+
+.diagram-node-card {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.65rem 0.95rem;
+  border-radius: 12px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  min-width: 210px;
+  max-width: 100%;
+}
+
+.diagram-node-card.is-official {
+  border-color: var(--accent);
+}
+
+.pyramid-tier {
+  margin: 0.75rem auto;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  text-align: center;
+}
+
+.pyramid-tier-header {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  margin-bottom: 0.5rem;
+}
+
+.pyramid-members {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.45rem;
+}
+
+.timeline-track {
+  position: relative;
+  border-left: 3px solid var(--accent);
+  margin-left: 1rem;
+  padding-left: 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.timeline-step {
+  position: relative;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+}
+
+.timeline-step::before {
+  content: '';
+  position: absolute;
+  left: -1.85rem;
+  top: 1.05rem;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg-surface);
+}
