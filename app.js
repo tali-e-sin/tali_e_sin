@@ -1688,6 +1688,9 @@ async function refresh() {
   if (typeof populateGlobalDisciplineFilter === 'function') {
     populateGlobalDisciplineFilter();
   }
+  if (typeof initWorkshopCodex === 'function') {
+    initWorkshopCodex();
+  }
 
   if (!document.getElementById('view-profile').classList.contains('hidden')) {
     renderProfile();
