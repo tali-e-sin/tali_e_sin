@@ -63,6 +63,17 @@ function getBookCodexEntries(book) {
   return Array.isArray(book?.codex) ? book.codex : [];
 }
 
+function getArticleCodexEntries(art) {
+  const allEntries = Array.isArray(state?.codexEntries) ? state.codexEntries : [];
+  const excluded = new Set(Array.isArray(art?.excluded_codex_ids) ? art.excluded_codex_ids : []);
+  const explicitIds = Array.isArray(art?.codex_ids) ? art.codex_ids : [];
+
+  if (explicitIds.length) {
+    return allEntries.filter(e => explicitIds.includes(e.id) && !excluded.has(e.id));
+  }
+  return allEntries.filter(e => e.is_shared && !excluded.has(e.id));
+}
+
 function renderCommentThread(items, { targetType, targetId, showStars = false }) {
   const user = getCurrentUser();
   const list = Array.isArray(items) ? items : [];
@@ -613,7 +624,8 @@ window.openArticle = (id, scrollToComments = false) => {
   const likesCount = likedBy.length || art.likes || 0;
 
   window.readerReturnContext = { type: 'article', articleId: id };
-  const publicCodex = (state.codexEntries || []).filter(e => e.is_shared);
+  const articleCodex = getArticleCodexEntries(art);
+  const canEdit = canEditArticle(art, user);
 
   openModal(`
     <div class="reading-progress-wrap"><div id="readingProgressBar" class="reading-progress-bar"></div></div>
@@ -629,7 +641,7 @@ window.openArticle = (id, scrollToComments = false) => {
         ${art.author_id && (!user || user.id !== art.author_id)
           ? `<button type="button" class="btn" onclick="openTipModal('${escapeHtml(art.author_id)}', '${escapeHtml(art.author)}', '${escapeHtml(art.title)}')">🎁 Дарунок</button>`
           : ''}
-        ${canEditArticle(art, user) ? `<button class="btn" onclick="openEditArticleModal('${art.id}')">✏️ Редагувати</button>` : ''}
+        ${canEdit ? `<button class="btn" onclick="openEditArticleModal('${art.id}')">✏️ Редагувати</button>` : ''}
       </div>
     </div>
     <h2 style="margin-top:0.6rem;">${art.title}</h2>
@@ -644,7 +656,7 @@ window.openArticle = (id, scrollToComments = false) => {
       </div>
     </div>
 
-    <div class="reading-text" style="font-size:${readerFontSize}px;">${formatLiteraryText(art.content, publicCodex)}</div>
+    <div class="reading-text" style="font-size:${readerFontSize}px;">${formatLiteraryText(art.content, articleCodex, canEdit)}</div>
     <hr id="articleCommentsSection" style="margin:1.5rem 0; border-color:var(--border);" />
     <h3>Коментарі (${comments.length})</h3>
     <div>
@@ -679,6 +691,12 @@ window.openArticle = (id, scrollToComments = false) => {
 
 window.openEditArticleModal = (id) => {
   const art = state.articles.find(a => a.id === id);
+  const allEntries = state.codexEntries || [];
+  const currentLinked = getArticleCodexEntries(art);
+  const excludedIds = Array.isArray(art.excluded_codex_ids) ? art.excluded_codex_ids : [];
+  const availableToLink = allEntries.filter(e =>
+    (e.is_shared || e.author_id === getCurrentUser()?.id) && !currentLinked.some(c => c.id === e.id)
+  );
   if (!art) return;
 
   openModal(`
@@ -692,6 +710,23 @@ window.openEditArticleModal = (id) => {
         <option value="Аналіз">Аналіз</option>
       </select>
       <textarea id="editArtContent" class="input textarea" rows="10" required></textarea>
+      <hr style="border-color:var(--border);" />
+      <h4>📖 Терміни Кодексу у статті (${currentLinked.length})</h4>
+      <div style="display:flex; gap:0.45rem; flex-wrap:wrap;">
+        <select id="artCodexAddSelect" class="input" style="flex:1;">
+          <option value="">-- Додати або повернути картку Кодексу --</option>
+          ${availableToLink.map(e => `<option value="${e.id}">${escapeHtml(e.title)} (${escapeHtml(getDisciplineTitle(e))})</option>`).join('')}
+        </select>
+        <button type="button" class="btn" onclick="linkCodexToArticle('${art.id}')">+ Додати</button>
+      </div>
+      <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+        ${currentLinked.map(item => `
+          <span class="badge" style="display:inline-flex; align-items:center; gap:0.35rem;">
+            ${escapeHtml(item.title)}
+            <button type="button" style="background:none; border:none; color:var(--danger); cursor:pointer; font-weight:700;" onclick="unlinkCodexFromArticle('${art.id}', '${item.id}')" title="Відкріпити">✕</button>
+          </span>
+        `).join('') || '<small class="subtitle">Немає прив’язаних термінів</small>'}
+      </div>
       <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
         <button type="submit" class="btn btn-primary">Зберегти зміни</button>
         <button type="button" class="btn" onclick="openArticle('${art.id}')">Скасувати</button>
@@ -721,6 +756,32 @@ window.openEditArticleModal = (id) => {
 
 document.getElementById('articleSearch').addEventListener('input', renderArticles);
 document.getElementById('categoryFilter').addEventListener('change', renderArticles);
+
+window.linkCodexToArticle = async (articleId) => {
+  const art = state.articles.find(a => a.id === articleId);
+  const entryId = document.getElementById('artCodexAddSelect')?.value;
+  if (!art || !entryId) return;
+
+  const currentIds = getArticleCodexEntries(art).map(e => e.id);
+  const nextIds = deduplicateList([...currentIds, entryId]);
+  const nextExcluded = (art.excluded_codex_ids || []).filter(id => id !== entryId);
+
+  await TaliesinAPI.updateArticleCodexLinks(articleId, { codexIds: nextIds, excludedCodexIds: nextExcluded });
+  await refresh();
+  openEditArticleModal(articleId);
+};
+
+window.unlinkCodexFromArticle = async (articleId, entryId) => {
+  const art = state.articles.find(a => a.id === articleId);
+  if (!art) return;
+
+  const nextIds = getArticleCodexEntries(art).map(e => e.id).filter(id => id !== entryId);
+  const nextExcluded = deduplicateList([...(art.excluded_codex_ids || []), entryId]);
+
+  await TaliesinAPI.updateArticleCodexLinks(articleId, { codexIds: nextIds, excludedCodexIds: nextExcluded });
+  await refresh();
+  openEditArticleModal(articleId);
+};
 
 // --- Книги, глави та редактор автора ---
 function renderBooks() {
@@ -925,7 +986,7 @@ window.readChapter = async (bookId, chapterId) => {
   const unlocked = user ? user.unlockedChapters : [];
 
   window.readerReturnContext = { type: 'chapter', bookId, chapterId };
-const bookCodex = getBookCodexEntries(book);
+  const bookCodex = getBookCodexEntries(book);
 
   try {
     if (chap.price > 0 && !isAuthor) {
@@ -952,8 +1013,8 @@ const bookCodex = getBookCodexEntries(book);
         ${book.author_id && (!user || user.id !== book.author_id)
           ? `<button type="button" class="btn" onclick="openTipModal('${escapeHtml(book.author_id)}', '${escapeHtml(book.author)}', '${escapeHtml(book.title)}')">🎁 Дарунок барду</button>`
           : ''}
-        ${getBookCodexEntries(book).length
-          ? `<button type="button" class="btn" onclick="openBookCodexModal('${book.id}', '${chap.id}')">📖 Кодекс (${getBookCodexEntries(book).length})</button>`
+        ${bookCodex.length
+          ? `<button type="button" class="btn" onclick="openBookCodexModal('${book.id}', '${chap.id}')">📖 Кодекс (${bookCodex.length})</button>`
           : ''}
         ${isAuthor ? `<button class="btn" onclick="openEditChapterModal('${book.id}', '${chap.id}')">✏️ Редагувати главу</button>` : ''}
       </div>
@@ -968,7 +1029,7 @@ const bookCodex = getBookCodexEntries(book);
         </div>
       </div>
 
-      <div class="reading-text" style="font-size:${readerFontSize}px;">${formatLiteraryText(chap.content, bookCodex)}</div>
+      <div class="reading-text" style="font-size:${readerFontSize}px;">${formatLiteraryText(chap.content, bookCodex, isAuthor)}</div>
 
       <div class="chapter-nav-footer">
         ${prevChap
@@ -1636,15 +1697,72 @@ function populateBookSelect() {
     editableBooks.map(b => `<option value="${b.id}">${b.title}</option>`).join('');
 }
 
+let pendingArticleCodexIds = new Set();
+let pendingChapterCodexIds = new Set();
+
+function bindLiveCodexDetector(textareaId, targetSet) {
+  const area = document.getElementById(textareaId);
+  if (!area) return;
+
+  const box = document.createElement('div');
+  box.className = 'live-codex-suggestions hidden';
+  area.insertAdjacentElement('afterend', box);
+
+  const scan = () => {
+    const text = area.value.toLowerCase();
+    const user = getCurrentUser();
+    const candidates = (state?.codexEntries || []).filter(e =>
+      (e.is_shared || (user && e.author_id === user.id)) &&
+      String(e.title || '').trim().length >= 3 &&
+      text.includes(e.title.trim().toLowerCase())
+    );
+
+    if (!candidates.length) {
+      box.classList.add('hidden');
+      box.innerHTML = '';
+      return;
+    }
+
+    box.classList.remove('hidden');
+    box.innerHTML = `<span>📖 Знайдено в Кодексі:</span>` + candidates.map(c => {
+      const isAttached = targetSet.has(c.id);
+      return `<button type="button" class="live-codex-chip ${isAttached ? 'attached' : ''}" data-cid="${c.id}">
+        ${isAttached ? '✓' : '+'} ${escapeHtml(c.title)}
+      </button>`;
+    }).join('');
+
+    box.querySelectorAll('.live-codex-chip').forEach(btn => {
+      btn.onclick = () => {
+        const cid = btn.dataset.cid;
+        if (targetSet.has(cid)) targetSet.delete(cid);
+        else targetSet.add(cid);
+        scan();
+      };
+    });
+  };
+
+  area.addEventListener('input', scan);
+}
+
+bindLiveCodexDetector('artContent', pendingArticleCodexIds);
+bindLiveCodexDetector('chapContent', pendingChapterCodexIds);
+
 document.getElementById('articleForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
-    await TaliesinAPI.createArticle({
+    const createdArt = await TaliesinAPI.createArticle({
       title: document.getElementById('artTitle').value,
       category: document.getElementById('artCategory').value,
       content: document.getElementById('artContent').value
     });
+    if (createdArt?.id && pendingArticleCodexIds.size) {
+      await TaliesinAPI.updateArticleCodexLinks(createdArt.id, {
+        codexIds: [...pendingArticleCodexIds]
+      });
+    }
+    pendingArticleCodexIds.clear();
     e.target.reset();
+    document.querySelectorAll('.live-codex-suggestions').forEach(el => el.classList.add('hidden'));
     await refresh();
     navigateTo('articles');
   } catch (err) {
@@ -1654,17 +1772,26 @@ document.getElementById('articleForm').addEventListener('submit', async (e) => {
 
 document.getElementById('chapterForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const targetBookId = document.getElementById('bookSelect').value;
   try {
     await TaliesinAPI.addChapter({
-      bookId: document.getElementById('bookSelect').value,
+      bookId: targetBookId,
       newBookTitle: document.getElementById('newBookTitle').value,
       newBookDesc: document.getElementById('newBookDesc').value,
       chapTitle: document.getElementById('chapTitle').value,
       price: document.getElementById('chapPrice').value,
       content: document.getElementById('chapContent').value
     });
-    e.target.reset();
     await refresh();
+    if (targetBookId && pendingChapterCodexIds.size) {
+      const b = state.books.find(x => x.id === targetBookId);
+      const merged = deduplicateList([...(b?.codex_ids || []), ...pendingChapterCodexIds]);
+      await TaliesinAPI.updateBookCodexLinks(targetBookId, merged);
+      await refresh();
+    }
+    pendingChapterCodexIds.clear();
+    e.target.reset();
+    document.querySelectorAll('.live-codex-suggestions').forEach(el => el.classList.add('hidden'));
     navigateTo('books');
   } catch (err) {
     alert(err.message);
