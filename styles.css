@@ -884,3 +884,66 @@ h1, h2, h3, .brand-name {
   background: var(--accent-soft);
   color: var(--accent);
 }
+
+/* --- Обгортка терміна з миттєвою кнопкою відкріплення для автора --- */
+.codex-term-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.codex-unlink-mini {
+  display: none;
+  margin-left: 2px;
+  padding: 0 4px;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  border-radius: 4px;
+  border: 1px solid var(--danger);
+  background: var(--bg-surface);
+  color: var(--danger);
+  cursor: pointer;
+  vertical-align: super;
+}
+
+.codex-term-wrap:hover .codex-unlink-mini,
+.codex-unlink-mini:focus {
+  display: inline-block;
+}
+
+.codex-unlink-mini:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* --- Жива панель підказок Кодексу під час написання --- */
+.live-codex-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  background: var(--bg-subtle);
+  border: 1px dashed var(--accent);
+  font-size: 0.85rem;
+}
+
+.live-codex-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.22rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: var(--bg-surface);
+  color: var(--text-main);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.live-codex-chip.attached {
+  background: var(--accent);
+  color: #fff;
+}
