@@ -500,6 +500,29 @@ window.TaliesinAPI = {
     if (error) throw new Error(error.message);
   },
 
+  async purgeCodexAttributeKey(disciplineIds, attrKey) {
+    if (!Array.isArray(disciplineIds) || !disciplineIds.length || !attrKey) return;
+
+    const { data: rows, error } = await sbClient
+      .from('codex_entries')
+      .select('id, attributes')
+      .in('discipline_id', disciplineIds);
+
+    if (error) throw new Error(error.message);
+
+    for (const row of (rows || [])) {
+      const attrs = (row.attributes && typeof row.attributes === 'object') ? { ...row.attributes } : {};
+      if (Object.prototype.hasOwnProperty.call(attrs, attrKey)) {
+        delete attrs[attrKey];
+        const { error: updErr } = await sbClient
+          .from('codex_entries')
+          .update({ attributes: attrs })
+          .eq('id', row.id);
+        if (updErr) throw new Error(updErr.message);
+      }
+    }
+  },
+
   async updateChapter(bookId, chapterId, { title, price, content }) {
     const { data: book, error: fetchErr } = await sbClient.from('books').select('chapters').eq('id', bookId).single();
     if (fetchErr || !book) throw new Error('Книгу не знайдено');
