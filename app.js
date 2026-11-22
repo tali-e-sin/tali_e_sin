@@ -1302,7 +1302,7 @@ window.addCodexEntry = async (e, bookId) => {
 
   const title = document.getElementById('codexNewTitle').value.trim();
   const category = document.getElementById('codexNewCategory').value;
-  const universe = document.getElementById('codexNewUniverse').value.trim();
+  const universe = parseUniverseTags(document.getElementById('codexNewUniverse').value).join(', ');
   const description = document.getElementById('codexNewDesc').value.trim();
   const isShared = document.getElementById('codexIsShared').checked;
   if (!title || !description) return;
@@ -1491,7 +1491,8 @@ window.openCreateGlobalCodexModal = () => {
           <option value="Термін / Подія">Термін / Подія</option>
         </select>
       </div>
-        <input type="text" id="gCodexUniverse" class="input" maxlength="120" placeholder="Світи через кому або # (напр., #Авен, #Тіні)" />      <textarea id="gCodexDesc" class="input textarea" rows="5" maxlength="1500" placeholder="Детальний опис, риси, історія або особливості..." required></textarea>
+      <input type="text" id="gCodexUniverse" class="input" maxlength="120" placeholder="Світи через кому або # (напр., #Авен, #Тіні)" />
+      <textarea id="gCodexDesc" class="input textarea" rows="5" maxlength="1500" placeholder="Детальний опис, риси, історія або особливості..." required></textarea>
       <label class="subtitle" style="display:flex; align-items:center; gap:0.45rem; cursor:pointer;">
         <input type="checkbox" id="gCodexShared" checked />
         Зробити запис відкритим для всіх авторів порталу
@@ -1502,11 +1503,12 @@ window.openCreateGlobalCodexModal = () => {
 
   document.getElementById('globalCodexCreateForm').onsubmit = async (e) => {
     e.preventDefault();
+    const cleanUniverse = parseUniverseTags(document.getElementById('gCodexUniverse').value).join(', ');
     try {
       await TaliesinAPI.createCodexEntry({
         title: document.getElementById('gCodexTitle').value,
         category: document.getElementById('gCodexCategory').value,
-        universe: document.getElementById('gCodexUniverse').value,
+        universe: cleanUniverse,
         description: document.getElementById('gCodexDesc').value,
         isShared: document.getElementById('gCodexShared').checked
       });
@@ -1569,11 +1571,12 @@ window.openEditCodexModal = (entryId, returnBookId = null) => {
 
   document.getElementById('editCodexForm').onsubmit = async (e) => {
     e.preventDefault();
+    const cleanUniverse = parseUniverseTags(document.getElementById('editCodexUniverse').value).join(', ');
     try {
       await TaliesinAPI.updateCodexEntry(entry.id, {
         title: document.getElementById('editCodexTitle').value,
         category: document.getElementById('editCodexCategory').value,
-        universe: document.getElementById('editCodexUniverse').value,
+        universe: cleanUniverse,
         description: document.getElementById('editCodexDesc').value,
         isShared: document.getElementById('editCodexShared').checked
       });
