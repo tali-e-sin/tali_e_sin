@@ -615,3 +615,12 @@ h1, h2, h3, .brand-name {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
+
+.universe-tag.book-tag {
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
+.universe-tag.book-tag:hover {
+  border-color: var(--accent);
+}
