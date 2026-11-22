@@ -436,6 +436,14 @@ window.openCodexNodePreview = (entryId) => {
     </div>
     <h2 style="margin-top:0.55rem;">${escapeHtml(entry.title)}</h2>
 
+    ${window.readerReturnContext ? `
+      <div style="margin-bottom:0.75rem;">
+        <button type="button" class="btn btn-primary" style="font-size:0.84rem;" onclick="returnFromCodexPreview()">
+          ← Повернутися до читання
+        </button>
+      </div>
+    ` : ''}
+
     ${parentEntry ? `
       <div style="margin-bottom:0.5rem;">
         <button type="button" class="lineage-pill" onclick="openCodexNodePreview('${parentEntry.id}')">
@@ -461,6 +469,19 @@ window.openCodexNodePreview = (entryId) => {
       <div>${relatedList}</div>
     ` : ''}
   `);
+};
+
+window.returnFromCodexPreview = () => {
+  const ctx = window.readerReturnContext;
+  window.readerReturnContext = null;
+  if (!ctx) return closeModal();
+  if (ctx.type === 'chapter') {
+    readChapter(ctx.bookId, ctx.chapterId);
+  } else if (ctx.type === 'article') {
+    openArticle(ctx.articleId);
+  } else {
+    closeModal();
+  }
 };
 
 window.openEntryDiagram = (entryId) => {
@@ -757,6 +778,9 @@ function renderCodexDiagram() {
   }
 }
 
+document.getElementById('diagramTypeSelect')?.addEventListener('change', renderCodexDiagram);
+document.getElementById('diagramRootSelect')?.addEventListener('change', renderCodexDiagram);
+
 // --- Майстерня: вкладка Кодексу та зв'язків ---
 function renderWorkshopDynamicFields() {
   const container = document.getElementById('wsCodexDynamicFields');
@@ -919,5 +943,14 @@ window.deleteWorkshopRelation = async (relId) => {
     renderWorkshopRelationsList();
   } catch (err) {
     alert(err.message);
+  }
+};
+
+// --- Перехід до картки Кодексу прямо з тексту читалки ---
+window.readerReturnContext = null;
+
+window.openCodexTermFromReader = (entryId) => {
+  if (typeof openCodexNodePreview === 'function') {
+    openCodexNodePreview(entryId);
   }
 };
