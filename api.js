@@ -342,6 +342,21 @@ window.TaliesinAPI = {
     return data;
   },
 
+  async updateCodexEntry(entryId, { title, category, description, universe = '', isShared = true }) {
+    const { error } = await sbClient
+      .from('codex_entries')
+      .update({
+        title: title.trim(),
+        category,
+        description: description.trim(),
+        universe: universe.trim(),
+        is_shared: Boolean(isShared)
+      })
+      .eq('id', entryId);
+
+    if (error) throw new Error(error.message);
+  },
+
   async deleteCodexEntryById(entryId) {
     const { error } = await sbClient.from('codex_entries').delete().eq('id', entryId);
     if (error) throw new Error(error.message);
