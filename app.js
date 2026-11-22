@@ -612,6 +612,9 @@ window.openArticle = (id, scrollToComments = false) => {
   const isLiked = user ? likedBy.includes(user.id) : false;
   const likesCount = likedBy.length || art.likes || 0;
 
+  window.readerReturnContext = { type: 'article', articleId: id };
+  const publicCodex = (state.codexEntries || []).filter(e => e.is_shared);
+
   openModal(`
     <div class="reading-progress-wrap"><div id="readingProgressBar" class="reading-progress-bar"></div></div>
     <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; padding-right:2rem;">
@@ -641,7 +644,7 @@ window.openArticle = (id, scrollToComments = false) => {
       </div>
     </div>
 
-    <div class="reading-text" style="font-size:${readerFontSize}px;">${formatLiteraryText(art.content)}</div>
+    <div class="reading-text" style="font-size:${readerFontSize}px;">${formatLiteraryText(art.content, publicCodex)}</div>
     <hr id="articleCommentsSection" style="margin:1.5rem 0; border-color:var(--border);" />
     <h3>Коментарі (${comments.length})</h3>
     <div>
@@ -921,6 +924,9 @@ window.readChapter = async (bookId, chapterId) => {
   const isAuthor = canEditBook(book, user);
   const unlocked = user ? user.unlockedChapters : [];
 
+  window.readerReturnContext = { type: 'chapter', bookId, chapterId };
+const bookCodex = getBookCodexEntries(book);
+
   try {
     if (chap.price > 0 && !isAuthor) {
       await TaliesinAPI.unlockChapter(chap.id, chap.price, chap.title, book.author_id);
@@ -962,7 +968,7 @@ window.readChapter = async (bookId, chapterId) => {
         </div>
       </div>
 
-      <div class="reading-text" style="font-size:${readerFontSize}px;">${formatLiteraryText(chap.content)}</div>
+      <div class="reading-text" style="font-size:${readerFontSize}px;">${formatLiteraryText(chap.content, bookCodex)}</div>
 
       <div class="chapter-nav-footer">
         ${prevChap
