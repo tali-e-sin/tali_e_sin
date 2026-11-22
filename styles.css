@@ -947,3 +947,122 @@ h1, h2, h3, .brand-name {
   background: var(--accent);
   color: #fff;
 }
+
+/* --- 1D та 2D Дерево: Покоління та кольори гілок --- */
+.tree-controls-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.tree-toggles {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.gen-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.12rem 0.45rem;
+  border-radius: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+/* Фонова підсвітка поколінь у 1D-режимі */
+.tree-1d-gen-bg {
+  border-radius: 12px;
+  padding: 0.45rem 0.6rem 0.55rem 0.9rem;
+  margin-top: 0.5rem;
+}
+
+/* Контейнер 2D-графа зі скролом для широких дерев */
+.tree-2d-viewport {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-surface);
+  padding: 0.5rem;
+}
+
+.tree-2d-stage {
+  position: relative;
+  margin: 0 auto;
+}
+
+.tree-2d-gen-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-bottom: 1px dashed var(--border);
+  pointer-events: none;
+  display: flex;
+  align-items: flex-start;
+  padding: 0.35rem 0.6rem;
+}
+
+.tree-2d-gen-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  opacity: 0.88;
+}
+
+.tree-2d-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.tree-2d-node {
+  position: absolute;
+  transform: translate(-50%, 0);
+  width: 176px;
+  padding: 0.55rem 0.7rem;
+  border-radius: 12px;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  z-index: 2;
+}
+
+.tree-2d-node:hover {
+  transform: translate(-50%, -2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16);
+  z-index: 4;
+}
+
+.tree-2d-edge-tag {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  white-space: nowrap;
+  z-index: 3;
+  pointer-events: none;
+}
