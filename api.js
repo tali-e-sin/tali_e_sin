@@ -14,11 +14,12 @@ function getGuestId() {
 
 window.TaliesinAPI = {
   async getState() {
-    const [{ data: sessionData }, usersRes, articlesRes, booksRes] = await Promise.all([
+    const [{ data: sessionData }, usersRes, articlesRes, booksRes, codexRes] = await Promise.all([
       sbClient.auth.getSession(),
       sbClient.from('profiles').select('*'),
       sbClient.from('articles').select('*').order('created_at', { ascending: false }),
-      sbClient.from('books').select('*').order('created_at', { ascending: false })
+      sbClient.from('books').select('*').order('created_at', { ascending: false }),
+      sbClient.from('codex_entries').select('*').order('title', { ascending: true })
     ]);
 
     const currentUserId = sessionData?.session?.user?.id || null;
@@ -39,7 +40,8 @@ window.TaliesinAPI = {
       users,
       currentUserId,
       articles: articlesRes.data || [],
-      books: booksRes.data || []
+      books: booksRes.data || [],
+      codexEntries: codexRes.data || []
     };
   },
 
@@ -321,10 +323,34 @@ window.TaliesinAPI = {
     if (error) throw new Error(error.message);
   },
 
-  async updateBookCodex(bookId, codexArray) {
+  async createCodexEntry({ title, category, description, universe = '', isShared = true }) {
+    const { data: { user } } = await sbClient.auth.getUser();
+    if (!user) throw new Error('Увійдіть, щоб додавати записи до Кодексу');
+
+    const { data: profile } = await sbClient.from('profiles').select('name').eq('id', user.id).single();
+    const { data, error } = await sbClient.from('codex_entries').insert({
+      title: title.trim(),
+      category,
+      description: description.trim(),
+      universe: universe.trim(),
+      is_shared: Boolean(isShared),
+      author_id: user.id,
+      author_name: profile?.name || 'Бард'
+    }).select().single();
+
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
+  async deleteCodexEntryById(entryId) {
+    const { error } = await sbClient.from('codex_entries').delete().eq('id', entryId);
+    if (error) throw new Error(error.message);
+  },
+
+  async updateBookCodexLinks(bookId, codexIds) {
     const { error } = await sbClient
       .from('books')
-      .update({ codex: codexArray })
+      .update({ codex_ids: codexIds })
       .eq('id', bookId);
     if (error) throw new Error(error.message);
   },
