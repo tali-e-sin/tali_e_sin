@@ -354,6 +354,21 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+function formatUniverseTag(universe) {
+  const clean = String(universe || '').trim().replace(/^#+/, '');
+  if (!clean) return '';
+  return `#${clean}`;
+}
+
+window.filterCodexByUniverse = (universe) => {
+  const searchInput = document.getElementById('globalCodexSearch');
+  if (!searchInput) return;
+  const clean = String(universe || '').trim().replace(/^#+/, '');
+  // Повторний клік по тому самому тегу скидає фільтр
+  searchInput.value = searchInput.value.trim().toLowerCase() === clean.toLowerCase() ? '' : clean;
+  renderGlobalCodex();
+};
+
 function formatInlineMarkdown(text) {
   return escapeHtml(text)
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
@@ -1246,9 +1261,7 @@ window.openBookCodexModal = (bookId, returnChapterId = null) => {
               <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.3rem;">
                 <div>
                   <strong style="font-size:1.02rem;">${escapeHtml(item.title)}</strong>
-                  ${item.universe ? `<small class="subtitle" style="margin-left:0.4rem;">(${escapeHtml(item.universe)})</small>` : ''}
-                </div>
-                <div style="display:flex; gap:0.35rem; align-items:center;">
+                  ${item.universe ? `<small class="subtitle" style="margin-left:0.35rem; color:var(--accent); font-weight:600;">${escapeHtml(formatUniverseTag(item.universe))}</small>` : ''}                <div style="display:flex; gap:0.35rem; align-items:center;">
                   ${canTip ? `<button type="button" class="btn" style="padding:0.2rem 0.55rem; font-size:0.78rem;" onclick="openTipModal('${escapeHtml(item.author_id)}', '${escapeHtml(item.author_name || 'Бард')}', 'Кодекс: ${escapeHtml(item.title)}')">🎁</button>` : ''}
                   <span class="badge">${escapeHtml(item.category || 'Термін / Подія')}</span>
                 </div>
@@ -1372,13 +1385,16 @@ function renderGlobalCodex() {
     const canDelete = user && (user.role === 'admin' || entry.author_id === user.id);
     const canEdit = user && (user.role === 'admin' || entry.author_id === user.id);
     const canTip = entry.author_id && (!user || user.id !== entry.author_id);
+    const q = (document.getElementById('globalCodexSearch')?.value || '').toLowerCase().replace(/^#+/, '').trim();
 
     return `
       <article class="card">
         <div>
-          <div class="meta-row" style="margin-bottom:0.6rem; gap:0.4rem; flex-wrap:wrap;">
+          <div class="meta-row" style="margin-bottom:0.6rem; gap:0.4rem; flex-wrap:wrap; align-items:flex-start;">
             <span class="badge">${escapeHtml(entry.category || 'Термін / Подія')}</span>
-            ${entry.universe ? `<span class="badge" style="background:var(--bg-subtle); color:var(--text-main);">🌌 ${escapeHtml(entry.universe)}</span>` : ''}
+            ${entry.universe
+              ? `<button type="button" class="universe-tag" onclick="filterCodexByUniverse('${escapeHtml(entry.universe)}')" title="Фільтрувати за цим світом">${escapeHtml(formatUniverseTag(entry.universe))}</button>`
+              : ''}
             ${!entry.is_shared ? `<span class="badge">🔒 Приватний</span>` : ''}
           </div>
           <h3>${escapeHtml(entry.title)}</h3>
