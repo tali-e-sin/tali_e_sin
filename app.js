@@ -2085,16 +2085,3 @@ renderHeader();
 
 // 2. А тепер підтягуємо реальні дані та сесію з Supabase
 refresh();
-
-<div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; justify-content:space-between; margin-bottom:1rem; padding:0.75rem; background:var(--bg-subtle); border-radius:12px;">
-      ${availableShared.length ? `
-        <select id="sharedCodexSelect" class="input" style="flex:1; min-width:200px;">
-          <option value="">-- Обрати зі спільної енциклопедії (${availableShared.length}) --</option>
-          ${availableShared.map(e => `<option value="${e.id}">${escapeHtml(e.title)} (${escapeHtml(e.category)}${e.universe ? ` · ${escapeHtml(e.universe)}` : ''})</option>`).join('')}
-        </select>
-        <button type="button" class="btn" onclick="linkSharedCodexEntry('${book.id}')">+ Підключити до книги</button>
-      ` : `
-        <span class="subtitle" style="font-size:0.86rem;">Усі наявні спільні картки вже підключені до цієї книги.</span>
-      `}
-      <button type="button" class="btn" style="font-size:0.82rem;" onclick="closeModal(); navigateTo('codex');">📖 Відкрити весь Кодекс</button>
-    </div>
