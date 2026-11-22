@@ -88,6 +88,15 @@ function getBookRatingStats(book) {
   return { avg, count: allItems.length, hasRatings: true };
 }
 
+function getBookCodexEntries(book) {
+  const allEntries = Array.isArray(state?.codexEntries) ? state.codexEntries : [];
+  const linkedIds = Array.isArray(book?.codex_ids) ? book.codex_ids : [];
+  if (linkedIds.length) {
+    return allEntries.filter(e => linkedIds.includes(e.id));
+  }
+  return Array.isArray(book?.codex) ? book.codex : [];
+}
+
 function renderCommentThread(items, { targetType, targetId, showStars = false }) {
   const user = getCurrentUser();
   const list = Array.isArray(items) ? items : [];
@@ -838,8 +847,8 @@ function renderBooks() {
                 ${isFav ? '★ В обраному' : '🔖 В обране'}
               </button>
               ${isAuthor ? `<button class="btn" style="padding:0.25rem 0.7rem; font-size:0.8rem;" onclick="openBookEditorModal('${book.id}')">✏️ Керувати</button>` : ''}
-              ${(book.codex || []).length
-  ? `<button class="btn" style="padding:0.25rem 0.7rem; font-size:0.8rem;" onclick="openBookCodexModal('${book.id}')">📖 Кодекс (${book.codex.length})</button>`
+              ${getBookCodexEntries(book).length
+  ? `<button class="btn" style="padding:0.25rem 0.7rem; font-size:0.8rem;" onclick="openBookCodexModal('${book.id}')">📖 Кодекс (${getBookCodexEntries(book).length})</button>`
   : ''}
             </div>
           </div>
@@ -998,8 +1007,8 @@ window.readChapter = async (bookId, chapterId) => {
         ${book.author_id && (!user || user.id !== book.author_id)
   ? `<button type="button" class="btn" onclick="openTipModal('${escapeHtml(book.author_id)}', '${escapeHtml(book.author)}', '${escapeHtml(book.title)}')">🎁 Дарунок барду</button>`
   : ''}
-  ${(book.codex || []).length
-  ? `<button type="button" class="btn" onclick="openBookCodexModal('${book.id}', '${chap.id}')">📖 Кодекс (${book.codex.length})</button>`
+  ${getBookCodexEntries(book).length
+  ? `<button type="button" class="btn" onclick="openBookCodexModal('${book.id}', '${chap.id}')">📖 Кодекс (${getBookCodexEntries(book).length})</button>`
   : ''}
         ${isAuthor ? `<button class="btn" onclick="openEditChapterModal('${book.id}', '${chap.id}')">✏️ Редагувати главу</button>` : ''}
       </div>
@@ -1112,7 +1121,7 @@ window.openBookCodexModal = (bookId, returnChapterId = null) => {
   const book = state.books.find(b => b.id === bookId);
   if (!book) return;
 
-  const entries = Array.isArray(book.codex) ? book.codex : [];
+  const entries = getBookCodexEntries(book);
   const categories = ['Усі', 'Персонаж', 'Локація', 'Артефакт / Технологія', 'Термін / Подія'];
 
   openModal(`
@@ -1123,7 +1132,7 @@ window.openBookCodexModal = (bookId, returnChapterId = null) => {
         : ''}
     </div>
     <h2 style="margin-top:0.5rem;">${escapeHtml(book.title)}</h2>
-    <p class="subtitle">Довідник персонажів, локацій та понять цього світу</p>
+    <p class="subtitle">Довідник персонажів, локацій та понять цього всесвіту</p>
 
     <div class="filters" style="margin:1rem 0;">
       <input type="search" id="codexSearchInput" class="input" placeholder="Пошук у кодексі..." style="flex:1; min-width:180px;" />
@@ -1150,7 +1159,10 @@ window.openBookCodexModal = (bookId, returnChapterId = null) => {
       ? filtered.map(item => `
           <div class="comment-box" style="margin-top:0.65rem;">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.3rem;">
-              <strong style="font-size:1.02rem;">${escapeHtml(item.title)}</strong>
+              <div>
+                <strong style="font-size:1.02rem;">${escapeHtml(item.title)}</strong>
+                ${item.universe ? `<small class="subtitle" style="margin-left:0.4rem;">(${escapeHtml(item.universe)})</small>` : ''}
+              </div>
               <span class="badge">${escapeHtml(item.category || 'Термін / Подія')}</span>
             </div>
             <div style="white-space:pre-line; color:var(--text-main);">${escapeHtml(item.description)}</div>
@@ -1171,17 +1183,114 @@ window.addCodexEntry = async (e, bookId) => {
 
   const title = document.getElementById('codexNewTitle').value.trim();
   const category = document.getElementById('codexNewCategory').value;
+  const universe = document.getElementById('codexNewUniverse').value.trim();
   const description = document.getElementById('codexNewDesc').value.trim();
+  const isShared = document.getElementById('codexIsShared').checked;
   if (!title || !description) return;
 
-  const current = Array.isArray(book.codex) ? book.codex : [];
-  const nextCodex = [
-    ...current,
-    { id: 'cx_' + Date.now(), title, category, description }
-  ];
+  try {
+    const created = await TaliesinAPI.createCodexEntry({
+      title,
+      category,
+      description,
+      universe: universe || book.title,
+      isShared
+    });
+
+    const user = getCurrentUser();
+  const bookCodex = getBookCodexEntries(book);
+  const linkedIds = bookCodex.map(e => e.id);
+  const availableShared = (state.codexEntries || []).filter(
+    e => (e.is_shared || e.author_id === user?.id) && !linkedIds.includes(e.id)
+  );
+    <hr style="margin:1.4rem 0; border-color:var(--border);" />
+    <h3>📖 Кодекс світу (${bookCodex.length})</h3>
+    <p class="subtitle" style="margin-bottom:0.75rem;">Підключайте спільні поняття всесвітів (напр., Ельфи, Астральна проєкція) або створюйте власні картки</p>
+
+    ${availableShared.length ? `
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1rem; padding:0.75rem; background:var(--bg-subtle); border-radius:12px;">
+        <select id="sharedCodexSelect" class="input" style="flex:1; min-width:200px;">
+          <option value="">-- Обрати зі спільної енциклопедії порталу --</option>
+          ${availableShared.map(e => `<option value="${e.id}">${escapeHtml(e.title)} (${escapeHtml(e.category)}${e.universe ? ` · ${escapeHtml(e.universe)}` : ''})</option>`).join('')}
+        </select>
+        <button type="button" class="btn" onclick="linkSharedCodexEntry('${book.id}')">+ Підключити до книги</button>
+      </div>
+    ` : ''}
+
+    <form class="stack-form" onsubmit="addCodexEntry(event, '${book.id}')" style="margin-bottom:1rem;">
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+        <input type="text" id="codexNewTitle" class="input" placeholder="Назва (напр., Ейріс або Ельфи)" style="flex:1; min-width:160px;" required />
+        <select id="codexNewCategory" class="input">
+          <option value="Персонаж">Персонаж</option>
+          <option value="Локація">Локація</option>
+          <option value="Артефакт / Технологія">Артефакт / Технологія</option>
+          <option value="Термін / Подія">Термін / Подія</option>
+        </select>
+      </div>
+      <input type="text" id="codexNewUniverse" class="input" placeholder="Всесвіт або уточнення (напр., Загальний архетип або Хроніки Авену)" />
+      <textarea id="codexNewDesc" class="input textarea" rows="2" maxlength="800" placeholder="Опис, особливості або відмінності у вашому світі..." required></textarea>
+      <label class="subtitle" style="display:flex; align-items:center; gap:0.45rem; cursor:pointer;">
+        <input type="checkbox" id="codexIsShared" checked />
+        Зробити запис доступним іншим авторам у спільній енциклопедії
+      </label>
+      <button type="submit" class="btn btn-primary" style="align-self:flex-start;">+ Створити та додати до книги</button>
+    </form>
+
+    <div>
+      ${bookCodex.map(item => {
+        const canDeleteGlobal = user && (user.role === 'admin' || item.author_id === user.id);
+        return `
+          <div class="chapter-item" style="flex-wrap:wrap;">
+            <div>
+              <strong>${escapeHtml(item.title)}</strong>
+              <span class="badge">${escapeHtml(item.category || '')}</span>
+              ${item.universe ? `<small class="subtitle" style="margin-left:0.35rem;">· ${escapeHtml(item.universe)}</small>` : ''}
+              <div class="subtitle" style="font-size:0.84rem; margin-top:0.2rem;">${escapeHtml(item.description)}</div>
+            </div>
+            <div style="display:flex; gap:0.35rem;">
+              <button type="button" class="btn" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="unlinkCodexEntry('${book.id}', '${item.id}')" title="Відкріпити від цієї книги">Відкріпити</button>
+              ${canDeleteGlobal ? `<button type="button" class="btn btn-danger" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="deleteCodexEntry('${book.id}', '${item.id}')" title="Видалити назавжди">✕</button>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('') || '<p class="subtitle">До цієї книги поки не підключено жодного запису Кодексу.</p>'}
+    </div>
+    
+    const currentLinks = Array.isArray(book.codex_ids) ? book.codex_ids : [];
+    await TaliesinAPI.updateBookCodexLinks(bookId, [...currentLinks, created.id]);
+    await refresh();
+    openBookEditorModal(bookId);
+  } catch (err) {
+    alert(err.message);
+  }
+};
+
+window.linkSharedCodexEntry = async (bookId) => {
+  const book = state.books.find(b => b.id === bookId);
+  const select = document.getElementById('sharedCodexSelect');
+  const entryId = select?.value;
+  if (!book || !entryId) return;
+
+  const currentLinks = Array.isArray(book.codex_ids) ? book.codex_ids : [];
+  if (currentLinks.includes(entryId)) return;
 
   try {
-    await TaliesinAPI.updateBookCodex(bookId, nextCodex);
+    await TaliesinAPI.updateBookCodexLinks(bookId, [...currentLinks, entryId]);
+    await refresh();
+    openBookEditorModal(bookId);
+  } catch (err) {
+    alert(err.message);
+  }
+};
+
+window.unlinkCodexEntry = async (bookId, entryId) => {
+  const book = state.books.find(b => b.id === bookId);
+  if (!book) return;
+  const currentLinks = Array.isArray(book.codex_ids) ? book.codex_ids : [];
+  const nextLinks = currentLinks.filter(id => id !== entryId);
+
+  try {
+    await TaliesinAPI.updateBookCodexLinks(bookId, nextLinks);
     await refresh();
     openBookEditorModal(bookId);
   } catch (err) {
@@ -1190,13 +1299,10 @@ window.addCodexEntry = async (e, bookId) => {
 };
 
 window.deleteCodexEntry = async (bookId, entryId) => {
-  const book = state.books.find(b => b.id === bookId);
-  if (!book) return;
-  const current = Array.isArray(book.codex) ? book.codex : [];
-  const nextCodex = current.filter(item => item.id !== entryId);
-
+  if (!confirm('Видалити цей запис зі спільного Кодексу порталу?')) return;
   try {
-    await TaliesinAPI.updateBookCodex(bookId, nextCodex);
+    await window.unlinkCodexEntry(bookId, entryId);
+    await TaliesinAPI.deleteCodexEntryById(entryId);
     await refresh();
     openBookEditorModal(bookId);
   } catch (err) {
