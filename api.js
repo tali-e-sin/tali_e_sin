@@ -60,7 +60,8 @@ window.TaliesinAPI = {
       codexDisciplines: disciplinesRes.data || [],
       codexRelations: relationsRes.data || []
     };
-    
+  },
+
   async register({ name, email, password }) {
     const cleanEmail = email.trim().toLowerCase();
     const cleanName = name.trim();
