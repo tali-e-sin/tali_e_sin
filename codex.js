@@ -1063,39 +1063,6 @@ function buildInteractiveTreeHtml({ canvas, rootIds, isEditable = false }) {
   }
 
   // --- 2D Граф (За поколіннями або за Шкалою часу з декадами) ---
-  const measureSpan = (nodeId) => {
-    const item = nodeMap.get(nodeId);
-    if (!item || placedForWidth.has(nodeId)) return 0.5;
-    placedForWidth.add(nodeId);
-    const activeKids = item.childrenIds.filter(cid => !placedForWidth.has(cid));
-    if (!activeKids.length) {
-      item.leafSpan = 1;
-      return 1;
-    }
-    item.leafSpan = activeKids.reduce((sum, cid) => sum + measureSpan(cid), 0);
-    return item.leafSpan;
-  };
-
-  let totalLeaves = 0;
-  rootIds.forEach(rId => { totalLeaves += measureSpan(rId); });
-  totalLeaves = Math.max(1, totalLeaves);
-
-  const positioned = new Set();
-  const assignX = (nodeId, leftSlot) => {
-    const item = nodeMap.get(nodeId);
-    if (!item || positioned.has(nodeId)) return;
-    positioned.add(nodeId);
-
-    item.x = Math.round((leftSlot + (item.leafSpan || 1) / 2) * NODE_SLOT_W + 40);
-    let cursor = leftSlot;
-    item.childrenIds.forEach(cid => {
-      if (!positioned.has(cid)) {
-        const cItem = nodeMap.get(cid);
-        assignX(cid, cursor);
-        cursor += (cItem?.leafSpan || 1);
-      }
-    });
-  };
 
   let rootCursor = 0;
   rootIds.forEach(rId => {
