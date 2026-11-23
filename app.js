@@ -1688,6 +1688,11 @@ document.querySelectorAll('[data-editor]').forEach(tab => {
   tab.addEventListener('click', () => switchWorkshopTab(tab.dataset.editor));
 });
 
+document.getElementById('workshopStory3DPanel')?.classList.toggle('hidden', tabKey !== 'story3d');
+if (tabKey === 'story3d' && typeof StoryProjections !== 'undefined') {
+  StoryProjections.renderWorkspace('story3DWorkspaceArea');
+}
+
 function populateBookSelect() {
   if (!state) return;
   const user = getCurrentUser();
