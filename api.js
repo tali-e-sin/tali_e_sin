@@ -523,6 +523,27 @@ window.TaliesinAPI = {
     }
   },
 
+  async deleteCodexDiscipline(disciplineId) {
+    // Відв'язуємо дочірні науки
+    await sbClient
+      .from('codex_disciplines')
+      .update({ parent_id: null })
+      .eq('parent_id', disciplineId);
+
+    // Очищаємо посилання в картках Кодексу (залишаючи текстову назву category)
+    await sbClient
+      .from('codex_entries')
+      .update({ discipline_id: null })
+      .eq('discipline_id', disciplineId);
+
+    const { error } = await sbClient
+      .from('codex_disciplines')
+      .delete()
+      .eq('id', disciplineId);
+
+    if (error) throw new Error(error.message);
+  },
+
   async updateChapter(bookId, chapterId, { title, price, content }) {
     const { data: book, error: fetchErr } = await sbClient.from('books').select('chapters').eq('id', bookId).single();
     if (fetchErr || !book) throw new Error('Книгу не знайдено');
