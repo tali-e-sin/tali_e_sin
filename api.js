@@ -48,6 +48,7 @@ window.TaliesinAPI = {
 
     const codexEntries = (codexRes.data || []).map(e => ({
       ...e,
+      is_system_primitive: Boolean(e.is_system_primitive),
       visual_style: (e.visual_style && typeof e.visual_style === 'object') ? e.visual_style : {}
     }));
 
@@ -349,13 +350,15 @@ window.TaliesinAPI = {
     attributes = {},
     description,
     universe = '',
-    isShared = true
+    isShared = true,
+    isSystemPrimitive = false
   }) {
     const { data: { user } } = await sbClient.auth.getUser();
     if (!user) throw new Error('Увійдіть, щоб додавати записи до Кодексу');
 
     const { data: profile } = await sbClient.from('profiles').select('name, role').eq('id', user.id).single();
     const safeCanon = (canonStatus === 'official' && profile?.role !== 'admin') ? 'pending' : canonStatus;
+    const safePrimitive = profile?.role === 'admin' ? Boolean(isSystemPrimitive) : false;
 
     const { data, error } = await sbClient.from('codex_entries').insert({
       title: title.trim(),
@@ -367,6 +370,7 @@ window.TaliesinAPI = {
       description: (description || '').trim(),
       universe: universe.trim(),
       is_shared: Boolean(isShared),
+      is_system_primitive: safePrimitive,
       author_id: user.id,
       author_name: profile?.name || 'Бард'
     }).select().single();
@@ -385,7 +389,8 @@ window.TaliesinAPI = {
     description,
     universe = '',
     isShared = true,
-    visualStyle
+    visualStyle,
+    isSystemPrimitive
   }) {
     const { data: { user } } = await sbClient.auth.getUser();
     if (!user) throw new Error('Потрібна авторизація');
@@ -403,6 +408,9 @@ window.TaliesinAPI = {
     if (parentEntryId !== undefined) payload.parent_entry_id = parentEntryId || null;
     if (attributes !== undefined) payload.attributes = attributes;
     if (visualStyle !== undefined) payload.visual_style = visualStyle;
+    if (isSystemPrimitive !== undefined && profile?.role === 'admin') {
+      payload.is_system_primitive = Boolean(isSystemPrimitive);
+    }
     if (canonStatus !== undefined) {
       payload.canon_status = (canonStatus === 'official' && profile?.role !== 'admin') ? 'pending' : canonStatus;
     }
