@@ -1334,6 +1334,22 @@ window.setSecondaryRootsGenMode = (mode) => { secondaryRootsGenMode = mode; refr
 window.toggleTreeGenerations = () => { treeHighlightGenerations = !treeHighlightGenerations; refreshActiveTreeCanvases(); };
 window.toggleTreeBranchColors = () => { treeColorBranches = !treeColorBranches; refreshActiveTreeCanvases(); };
 
+let codexDiagramDimension = '2d';
+
+window.setCodexDiagramDimension = (dim) => {
+  codexDiagramDimension = dim;
+  document.getElementById('diagProj1DBtn')?.classList.toggle('active', dim === '1d');
+  document.getElementById('diagProj2DBtn')?.classList.toggle('active', dim === '2d');
+  document.getElementById('diagProj3DBtn')?.classList.toggle('active', dim === '3d');
+  if (dim === '1d') treeVisualSubmode = '1d';
+  if (dim === '2d') treeVisualSubmode = '2d';
+  renderCodexDiagram();
+};
+
+document.getElementById('diagProj1DBtn')?.addEventListener('click', () => setCodexDiagramDimension('1d'));
+document.getElementById('diagProj2DBtn')?.addEventListener('click', () => setCodexDiagramDimension('2d'));
+document.getElementById('diagProj3DBtn')?.addEventListener('click', () => setCodexDiagramDimension('3d'));
+
 function renderCodexDiagram() {
   const canvas = document.getElementById('diagramCanvasArea');
   if (!canvas || !state) return;
@@ -2098,19 +2114,3 @@ window.quickUnlinkCodexTerm = async (entryId) => {
     alert(err.message);
   }
 };
-
-let codexDiagramDimension = '2d';
-
-window.setCodexDiagramDimension = (dim) => {
-  codexDiagramDimension = dim;
-  document.getElementById('diagProj1DBtn')?.classList.toggle('active', dim === '1d');
-  document.getElementById('diagProj2DBtn')?.classList.toggle('active', dim === '2d');
-  document.getElementById('diagProj3DBtn')?.classList.toggle('active', dim === '3d');
-  if (dim === '1d') treeVisualSubmode = '1d';
-  if (dim === '2d') treeVisualSubmode = '2d';
-  renderCodexDiagram();
-};
-
-document.getElementById('diagProj1DBtn')?.addEventListener('click', () => setCodexDiagramDimension('1d'));
-document.getElementById('diagProj2DBtn')?.addEventListener('click', () => setCodexDiagramDimension('2d'));
-document.getElementById('diagProj3DBtn')?.addEventListener('click', () => setCodexDiagramDimension('3d'));
