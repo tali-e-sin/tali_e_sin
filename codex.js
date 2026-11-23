@@ -1351,6 +1351,41 @@ function renderCodexDiagram() {
   const rootEntry = entries.find(e => e.id === rootId);
   if (!rootEntry) return;
 
+  if (codexDiagramDimension === '3d' && typeof UniversalProjectionEngine !== 'undefined') {
+    const g3d = UniversalProjectionEngine.buildCodexEntityGraph3D(rootId, type);
+    UniversalProjectionEngine.renderInteractive3D({
+      container: canvas,
+      graph: g3d,
+      svgId: 'codexEntity3DSvg',
+      onNodeClickFn: 'openCodexNodePreview',
+      rerenderCall: 'renderCodexDiagram()'
+    });
+    return;
+  }
+
+  if (codexDiagramDimension === '1d' && type !== 'tree') {
+  const rels = relations.filter(r => r.source_id === rootId || r.target_id === rootId);
+  canvas.innerHTML = `
+    <h3>📜 1D Текстова проекція: ${escapeHtml(rootEntry.title)}</h3>
+    <div class="timeline-track" style="margin-top:1rem;">
+      ${rels.map(r => {
+        const isOut = r.source_id === rootId;
+        const other = entries.find(e => e.id === (isOut ? r.target_id : r.source_id));
+        if (!other) return '';
+        return `
+          <div class="timeline-step" style="cursor:pointer;" onclick="openCodexNodePreview('${other.id}')">
+            <span class="badge">${isOut ? '→ Вихідний' : '← Вхідний'}</span>
+            ${r.role_label ? `<span class="badge">${escapeHtml(r.role_label)}</span>` : ''}
+            ${r.period_label ? `<span class="badge">${escapeHtml(r.period_label)}</span>` : ''}
+            <strong style="display:block; margin-top:0.3rem;">${escapeHtml(other.title)}</strong>
+          </div>
+        `;
+      }).join('') || '<p class="subtitle">Зв’язків для цієї сутності поки немає.</p>'}
+    </div>
+  `;
+  return;
+}
+
   // 1. Дерево / Порівняння родів / Шкала часу
   if (type === 'tree') {
     buildInteractiveTreeHtml({
@@ -2063,3 +2098,19 @@ window.quickUnlinkCodexTerm = async (entryId) => {
     alert(err.message);
   }
 };
+
+let codexDiagramDimension = '2d';
+
+window.setCodexDiagramDimension = (dim) => {
+  codexDiagramDimension = dim;
+  document.getElementById('diagProj1DBtn')?.classList.toggle('active', dim === '1d');
+  document.getElementById('diagProj2DBtn')?.classList.toggle('active', dim === '2d');
+  document.getElementById('diagProj3DBtn')?.classList.toggle('active', dim === '3d');
+  if (dim === '1d') treeVisualSubmode = '1d';
+  if (dim === '2d') treeVisualSubmode = '2d';
+  renderCodexDiagram();
+};
+
+document.getElementById('diagProj1DBtn')?.addEventListener('click', () => setCodexDiagramDimension('1d'));
+document.getElementById('diagProj2DBtn')?.addEventListener('click', () => setCodexDiagramDimension('2d'));
+document.getElementById('diagProj3DBtn')?.addEventListener('click', () => setCodexDiagramDimension('3d'));
