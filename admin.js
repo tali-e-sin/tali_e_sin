@@ -1,5 +1,13 @@
 // --- Ізольований модуль Хранителя (завантажується лише для role === 'admin') ---
 
+const FIELD_TYPE_LABELS = {
+  text: '📝 Малий текст',
+  textarea: '📄 Великий текст',
+  number: '🔢 Цифри',
+  date: '📅 Дата',
+  unicode: '🔣 Юнікод / Символ'
+};
+
 window.renderSchemaArchitect = function () {
   const user = getCurrentUser();
   const managerEl = document.getElementById('schemaDisciplinesManager');
@@ -7,6 +15,7 @@ window.renderSchemaArchitect = function () {
   if (!managerEl || !user || user.role !== 'admin') return;
 
   const disciplines = state.codexDisciplines || [];
+  const entries = state.codexEntries || [];
 
   managerEl.innerHTML = `
     <form id="newDisciplineForm" class="stack-form" style="padding:1rem; background:var(--bg-subtle); border-radius:12px; margin-bottom:1.2rem;">
@@ -24,44 +33,89 @@ window.renderSchemaArchitect = function () {
     </form>
 
     ${disciplines.map(d => {
-      const fields = Array.isArray(d.schema_fields) ? d.schema_fields : [];
+      const schemaFields = Array.isArray(d.schema_fields) ? d.schema_fields : [];
+      const schemaKeys = new Set(schemaFields.map(f => f.key));
+
+      // Знаходимо всі ключі в реальних картках цієї науки, яких немає в schema_fields (створені раніше або вручну)
+      const discEntries = entries.filter(e => e.discipline_id === d.id);
+      const legacyKeysMap = new Map(); // key -> count
+      discEntries.forEach(e => {
+        const attrs = (e.attributes && typeof e.attributes === 'object') ? e.attributes : {};
+        Object.entries(attrs).forEach(([k, v]) => {
+          if (!schemaKeys.has(k) && v !== undefined && String(v).trim() !== '') {
+            legacyKeysMap.set(k, (legacyKeysMap.get(k) || 0) + 1);
+          }
+        });
+      });
+
+      const legacyKeysList = [...legacyKeysMap.entries()];
+      const filledDescriptionsCount = discEntries.filter(e => String(e.description || '').trim() !== '').length;
+
       return `
         <div class="chapter-item" style="flex-direction:column; align-items:stretch; gap:0.65rem; padding:0.95rem;">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
             <div>
-              <strong>${escapeHtml(d.title)}</strong> <small class="subtitle">[${escapeHtml(d.id)}]</small>
+              <strong>${escapeHtml(d.title)}</strong> <small class="subtitle">[${escapeHtml(d.id)}] · Карток: ${discEntries.length}</small>
               ${(d.depends_on || []).length ? `<div class="subtitle" style="font-size:0.82rem;">Спирається на: ${escapeHtml(d.depends_on.join(', '))}</div>` : ''}
             </div>
-            <button type="button" class="btn" style="font-size:0.82rem;" onclick="openAddDisciplineFieldModal('${escapeHtml(d.id)}')">+ Додати параметр поля</button>
-          </div>
-
-          <div style="display:flex; gap:0.35rem; flex-wrap:wrap;">
-              <button type="button" class="btn" style="font-size:0.8rem;" onclick="openEditDisciplineModal('${escapeHtml(d.id)}')" title="Редагувати назву, батьківську галузь та залежності">✏️ Наука</button>
+            <div style="display:flex; gap:0.35rem; flex-wrap:wrap;">
+              <button type="button" class="btn" style="font-size:0.8rem;" onclick="openEditDisciplineModal('${escapeHtml(d.id)}')">✏️ Наука</button>
               <button type="button" class="btn" style="font-size:0.8rem;" onclick="openAddDisciplineFieldModal('${escapeHtml(d.id)}')">+ Поле</button>
               <button type="button" class="btn btn-danger" style="font-size:0.8rem;" onclick="deleteDisciplineBase('${escapeHtml(d.id)}')" title="Видалити всю базу/науку">🗑️</button>
             </div>
+          </div>
 
           <div style="display:flex; flex-direction:column; gap:0.4rem;">
-            ${fields.length
-              ? fields.map((f, idx) => `
-                  <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; padding:0.4rem 0.65rem; border-radius:8px; background:var(--bg-surface); border:1px solid var(--border); ${f.hidden ? 'opacity:0.55;' : ''}">
-                    <div>
-                      <strong>${escapeHtml(f.label)}</strong>
-                      <small class="subtitle">[${escapeHtml(f.key)} · ${escapeHtml(f.type || 'text')}]</small>
-                      ${f.hidden ? `<span class="badge" style="margin-left:0.35rem;">Приховано з форми</span>` : ''}
-                    </div>
-                    <div style="display:flex; gap:0.25rem; align-items:center;">
-                      <button type="button" class="btn" style="padding:0.15rem 0.45rem; font-size:0.78rem;" ${idx === 0 ? 'disabled' : ''} onclick="moveDisciplineField('${escapeHtml(d.id)}', ${idx}, -1)" title="Вгору">▲</button>
-                      <button type="button" class="btn" style="padding:0.15rem 0.45rem; font-size:0.78rem;" ${idx === fields.length - 1 ? 'disabled' : ''} onclick="moveDisciplineField('${escapeHtml(d.id)}', ${idx}, 1)" title="Вниз">▼</button>
-                      <button type="button" class="btn" style="padding:0.15rem 0.5rem; font-size:0.78rem;" onclick="renameDisciplineField('${escapeHtml(d.id)}', ${idx})" title="Перейменувати підпис">✏️</button>
-                      <button type="button" class="btn" style="padding:0.15rem 0.5rem; font-size:0.78rem;" onclick="toggleDisciplineFieldVisibility('${escapeHtml(d.id)}', ${idx})" title="${f.hidden ? 'Повернути у форму' : 'Приховати з форми (дані збережуться)'}">
-                        ${f.hidden ? '👁️ Показати' : '🙈 Приховати'}
-                      </button>
-                      <button type="button" class="btn btn-danger" style="padding:0.15rem 0.5rem; font-size:0.78rem;" onclick="deleteDisciplineField('${escapeHtml(d.id)}', ${idx})" title="Видалити параметр і дані назавжди">✕</button>
-                    </div>
-                  </div>
-                `).join('')
-              : '<small class="subtitle">Без додаткових параметрів</small>'}
+            <!-- Системне поле "Детальний опис" (якщо воно заповнене в картках цієї науки) -->
+            ${filledDescriptionsCount > 0 ? `
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; padding:0.4rem 0.65rem; border-radius:8px; background:var(--bg-subtle); border:1px dashed var(--border);">
+                <div>
+                  <strong>Детальний опис (description)</strong>
+                  <small class="subtitle">[системне поле · заповнено у ${filledDescriptionsCount} картках]</small>
+                </div>
+                <button type="button" class="btn btn-danger" style="padding:0.15rem 0.5rem; font-size:0.78rem;" onclick="clearDisciplineDescriptions('${escapeHtml(d.id)}', ${filledDescriptionsCount})" title="Очистити опис у всіх картках цієї науки">
+                  ✕ Очистити описи
+                </button>
+              </div>
+            ` : ''}
+
+            <!-- Параметри, закріплені у схемі науки -->
+            ${schemaFields.map((f, idx) => `
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; padding:0.4rem 0.65rem; border-radius:8px; background:var(--bg-surface); border:1px solid var(--border); ${f.hidden ? 'opacity:0.55;' : ''}">
+                <div>
+                  <strong>${escapeHtml(f.label)}</strong>
+                  <small class="subtitle">[${escapeHtml(f.key)} · ${FIELD_TYPE_LABELS[f.type] || f.type || 'text'}]</small>
+                  ${f.hidden ? `<span class="badge" style="margin-left:0.35rem;">Приховано з форми</span>` : ''}
+                </div>
+                <div style="display:flex; gap:0.25rem; align-items:center; flex-wrap:wrap;">
+                  <button type="button" class="btn" style="padding:0.15rem 0.45rem; font-size:0.78rem;" ${idx === 0 ? 'disabled' : ''} onclick="moveDisciplineField('${escapeHtml(d.id)}', ${idx}, -1)" title="Вгору">▲</button>
+                  <button type="button" class="btn" style="padding:0.15rem 0.45rem; font-size:0.78rem;" ${idx === schemaFields.length - 1 ? 'disabled' : ''} onclick="moveDisciplineField('${escapeHtml(d.id)}', ${idx}, 1)" title="Вниз">▼</button>
+                  <button type="button" class="btn" style="padding:0.15rem 0.5rem; font-size:0.78rem;" onclick="openEditDisciplineFieldModal('${escapeHtml(d.id)}', ${idx})" title="Редагувати назву та тип">✏️</button>
+                  <button type="button" class="btn" style="padding:0.15rem 0.5rem; font-size:0.78rem;" onclick="toggleDisciplineFieldVisibility('${escapeHtml(d.id)}', ${idx})">
+                    ${f.hidden ? '👁️ Показати' : '🙈 Приховати'}
+                  </button>
+                  <button type="button" class="btn btn-danger" style="padding:0.15rem 0.5rem; font-size:0.78rem;" onclick="deleteDisciplineField('${escapeHtml(d.id)}', ${idx})" title="Видалити параметр і дані назавжди">✕</button>
+                </div>
+              </div>
+            `).join('')}
+
+            <!-- Поля, які були додані раніше / поза схемою, але є в картках -->
+            ${legacyKeysList.map(([legacyKey, cnt]) => `
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; padding:0.4rem 0.65rem; border-radius:8px; background:var(--accent-soft); border:1px dashed var(--accent);">
+                <div>
+                  <strong>${escapeHtml(legacyKey)}</strong>
+                  <small class="subtitle">[поза схемою · є у ${cnt} картках]</small>
+                </div>
+                <div style="display:flex; gap:0.3rem; align-items:center;">
+                  <button type="button" class="btn" style="padding:0.15rem 0.5rem; font-size:0.78rem;" onclick="promoteLegacyFieldToSchema('${escapeHtml(d.id)}', '${escapeHtml(legacyKey)}')">+ У схему</button>
+                  <button type="button" class="btn btn-danger" style="padding:0.15rem 0.5rem; font-size:0.78rem;" onclick="deleteLegacyAttributeFromDiscipline('${escapeHtml(d.id)}', '${escapeHtml(legacyKey)}', ${cnt})" title="Видалити цей параметр з усіх карток">✕</button>
+                </div>
+              </div>
+            `).join('')}
+
+            ${!schemaFields.length && !legacyKeysList.length && !filledDescriptionsCount
+              ? '<small class="subtitle">Без додаткових параметрів</small>'
+              : ''}
           </div>
         </div>
       `;
@@ -96,7 +150,7 @@ window.renderSchemaArchitect = function () {
           <div class="chapter-item" style="flex-wrap:wrap;">
             <div>
               <strong>${escapeHtml(e.title)}</strong> <span class="badge">${escapeHtml(getDisciplineTitle(e))}</span>
-              <div class="subtitle" style="font-size:0.84rem;">Автор: ${escapeHtml(e.author_name || '')} · ${escapeHtml(e.description.slice(0, 120))}...</div>
+              <div class="subtitle" style="font-size:0.84rem;">Автор: ${escapeHtml(e.author_name || '')} · ${escapeHtml((e.description || '').slice(0, 120))}</div>
             </div>
             <div style="display:flex; gap:0.4rem;">
               <button type="button" class="btn btn-primary" onclick="approveEntryCanon('${e.id}')">✓ Затвердити Канон</button>
@@ -105,85 +159,6 @@ window.renderSchemaArchitect = function () {
           </div>
         `).join('')
       : '<p class="subtitle">Заявок на узгодження в Канон зараз немає.</p>';
-  }
-};
-
-window.openEditDisciplineModal = (discId) => {
-  const disc = getDisciplineById(discId);
-  if (!disc) return;
-  const otherDiscs = (state.codexDisciplines || []).filter(d => d.id !== disc.id);
-
-  openModal(`
-    <span class="badge">✏️ Редагування науки / бази</span>
-    <h2 style="margin-top:0.5rem;">${escapeHtml(disc.title)}</h2>
-    <p class="subtitle">Системний ключ <strong>[${escapeHtml(disc.id)}]</strong> незмінний для збереження цілісності посилань.</p>
-
-    <form id="editDisciplineMetaForm" class="stack-form" style="margin-top:1rem;">
-      <label class="subtitle">Назва науки / розділу</label>
-      <input type="text" id="editDiscTitle" class="input" required />
-      <label class="subtitle">Батьківська галузь</label>
-      <select id="editDiscParent" class="input">
-        <option value="">-- Коренева галузь --</option>
-        ${otherDiscs.map(d => `<option value="${escapeHtml(d.id)}">${escapeHtml(d.title)}</option>`).join('')}
-      </select>
-      <label class="subtitle">Спирається на науки (ключі через кому)</label>
-      <input type="text" id="editDiscDepends" class="input" />
-      <button type="submit" class="btn btn-primary">Зберегти зміни науки</button>
-    </form>
-  `);
-
-  document.getElementById('editDiscTitle').value = disc.title || '';
-  document.getElementById('editDiscParent').value = disc.parent_id || '';
-  document.getElementById('editDiscDepends').value = (disc.depends_on || []).join(', ');
-
-  document.getElementById('editDisciplineMetaForm').onsubmit = async (e) => {
-    e.preventDefault();
-    const deps = document.getElementById('editDiscDepends').value
-      .split(',')
-      .map(s => s.trim().toLowerCase())
-      .filter(Boolean);
-
-    try {
-      await TaliesinAPI.saveCodexDiscipline({
-        id: disc.id,
-        title: document.getElementById('editDiscTitle').value,
-        parentId: document.getElementById('editDiscParent').value || null,
-        dependsOn: deps,
-        defaultDiagram: disc.default_diagram,
-        schemaFields: disc.schema_fields || [],
-        sortOrder: disc.sort_order
-      });
-      closeModal();
-      await refresh();
-      renderSchemaArchitect();
-      if (typeof initWorkshopCodex === 'function') initWorkshopCodex();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-};
-
-window.deleteDisciplineBase = async (discId) => {
-  const disc = getDisciplineById(discId);
-  if (!disc) return;
-
-  const cardsCount = (state.codexEntries || []).filter(e => e.discipline_id === disc.id).length;
-  const subCount = (state.codexDisciplines || []).filter(d => d.parent_id === disc.id).length;
-
-  const msg = `⚠️ Ви збираєтесь видалити базу/науку «${disc.title}» [${disc.id}].\n` +
-    `• Прив'язаних карток Кодексу: ${cardsCount} (вони залишаться в Кодексі без прив'язки до цієї науки)\n` +
-    `• Дочірніх підрозділів: ${subCount} (вони стануть кореневими)\n\n` +
-    `Видалити цю науку назавжди?`;
-
-  if (!confirm(msg)) return;
-
-  try {
-    await TaliesinAPI.deleteCodexDiscipline(disc.id);
-    await refresh();
-    renderSchemaArchitect();
-    if (typeof initWorkshopCodex === 'function') initWorkshopCodex();
-  } catch (err) {
-    alert(err.message);
   }
 };
 
@@ -202,6 +177,59 @@ async function persistDisciplineFields(disc, nextFields) {
   if (typeof initWorkshopCodex === 'function') initWorkshopCodex();
 }
 
+window.promoteLegacyFieldToSchema = async (discId, legacyKey) => {
+  const disc = getDisciplineById(discId);
+  if (!disc) return;
+  const label = prompt(`Вкажіть зрозумілу назву для параметра [${legacyKey}]:`, legacyKey);
+  if (label === null || !label.trim()) return;
+
+  const existing = Array.isArray(disc.schema_fields) ? disc.schema_fields : [];
+  const nextFields = deduplicateList([...existing, { key: legacyKey, label: label.trim(), type: 'text', hidden: false }], f => f.key);
+  await persistDisciplineFields(disc, nextFields);
+};
+
+window.deleteLegacyAttributeFromDiscipline = async (discId, legacyKey, count) => {
+  const disc = getDisciplineById(discId);
+  if (!disc) return;
+  const msg = `⚠️ Параметр «${legacyKey}» містить дані у ${count} картках науки «${disc.title}».\n\nВидалити його та всі значення НАЗАВЖДИ?`;
+  if (!confirm(msg)) return;
+
+  try {
+    await TaliesinAPI.purgeCodexAttributeKey([disc.id], legacyKey);
+    await refresh();
+    renderSchemaArchitect();
+  } catch (err) {
+    alert(err.message);
+  }
+};
+
+window.clearDisciplineDescriptions = async (discId, count) => {
+  const disc = getDisciplineById(discId);
+  if (!disc) return;
+  if (!confirm(`⚠️ Очистити поле «Детальний опис» у ${count} картках науки «${disc.title}» назавжди?`)) return;
+
+  try {
+    const targets = (state.codexEntries || []).filter(e => e.discipline_id === disc.id && String(e.description || '').trim() !== '');
+    for (const entry of targets) {
+      await TaliesinAPI.updateCodexEntry(entry.id, {
+        title: entry.title,
+        category: entry.category,
+        disciplineId: entry.discipline_id,
+        parentEntryId: entry.parent_entry_id,
+        attributes: entry.attributes,
+        universe: entry.universe,
+        description: '',
+        isShared: entry.is_shared,
+        visualStyle: entry.visual_style
+      });
+    }
+    await refresh();
+    renderSchemaArchitect();
+  } catch (err) {
+    alert(err.message);
+  }
+};
+
 window.moveDisciplineField = async (discId, index, delta) => {
   const disc = getDisciplineById(discId);
   if (!disc) return;
@@ -217,21 +245,47 @@ window.moveDisciplineField = async (discId, index, delta) => {
   }
 };
 
-window.renameDisciplineField = async (discId, index) => {
+window.openEditDisciplineFieldModal = (discId, index) => {
   const disc = getDisciplineById(discId);
   const fields = [...(disc?.schema_fields || [])];
   const field = fields[index];
   if (!field) return;
 
-  const nextLabel = prompt(`Нова назва для параметра [${field.key}]:`, field.label);
-  if (nextLabel === null || !nextLabel.trim()) return;
+  openModal(`
+    <span class="badge">✏️ Редагування параметра</span>
+    <h2 style="margin-top:0.5rem;">[${escapeHtml(field.key)}] у науці «${escapeHtml(disc.title)}»</h2>
+    <form id="editDiscFieldForm" class="stack-form" style="margin-top:1rem;">
+      <label class="subtitle">Назва параметра для авторів</label>
+      <input type="text" id="edfLabel" class="input" required />
+      <label class="subtitle">Тип поля</label>
+      <select id="edfType" class="input">
+        <option value="text">📝 Малий текст (рядок)</option>
+        <option value="textarea">📄 Великий текст (абзац)</option>
+        <option value="number">🔢 Цифри (число)</option>
+        <option value="date">📅 Дата</option>
+        <option value="unicode">🔣 Юнікод (символ / емодзі / руна)</option>
+      </select>
+      <button type="submit" class="btn btn-primary">Зберегти параметр</button>
+    </form>
+  `);
 
-  fields[index] = { ...field, label: nextLabel.trim() };
-  try {
-    await persistDisciplineFields(disc, fields);
-  } catch (err) {
-    alert(err.message);
-  }
+  document.getElementById('edfLabel').value = field.label || '';
+  document.getElementById('edfType').value = field.type || 'text';
+
+  document.getElementById('editDiscFieldForm').onsubmit = async (e) => {
+    e.preventDefault();
+    fields[index] = {
+      ...field,
+      label: document.getElementById('edfLabel').value.trim(),
+      type: document.getElementById('edfType').value
+    };
+    try {
+      closeModal();
+      await persistDisciplineFields(disc, fields);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
 };
 
 window.toggleDisciplineFieldVisibility = async (discId, index) => {
@@ -254,13 +308,11 @@ window.deleteDisciplineField = async (discId, index) => {
   const field = fields[index];
   if (!field) return;
 
-  // Збираємо цю дисципліну та всі її прямі підгалузі
   const relatedDiscIds = new Set([disc.id]);
   (state.codexDisciplines || []).forEach(d => {
     if (d.parent_id === disc.id) relatedDiscIds.add(d.id);
   });
 
-  // Шукаємо картки, де цей параметр уже заповнений
   const affectedEntries = (state.codexEntries || []).filter(e => {
     if (!relatedDiscIds.has(e.discipline_id)) return false;
     const val = e.attributes?.[field.key];
@@ -293,11 +345,14 @@ window.openAddDisciplineFieldModal = (discId) => {
     <h2 style="margin-top:0.5rem;">Нове поле для: ${escapeHtml(disc.title)}</h2>
     <p class="subtitle">Усі попередні записи цієї науки збережуть свої дані без змін.</p>
     <form id="addDiscFieldForm" class="stack-form" style="margin-top:1rem;">
-      <input type="text" id="dfKey" class="input" placeholder="Системний ключ (латиницею, напр. atomic_mass)" required />
-      <input type="text" id="dfLabel" class="input" placeholder="Назва поля для авторів (напр. Атомна маса / Щільність)" required />
+      <input type="text" id="dfKey" class="input" placeholder="Системний ключ (латиницею, напр. birth_year)" required />
+      <input type="text" id="dfLabel" class="input" placeholder="Назва поля для авторів (напр. Рік народження)" required />
       <select id="dfType" class="input">
-        <option value="text">Короткий рядок (text)</option>
-        <option value="textarea">Розгорнутий текст (textarea)</option>
+        <option value="text">📝 Малий текст (рядок)</option>
+        <option value="textarea">📄 Великий текст (абзац)</option>
+        <option value="number">🔢 Цифри (число)</option>
+        <option value="date">📅 Дата</option>
+        <option value="unicode">🔣 Юнікод (символ / емодзі / руна)</option>
       </select>
       <button type="submit" class="btn btn-primary">Додати параметр</button>
     </form>
