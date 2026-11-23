@@ -1732,3 +1732,208 @@ window.deleteNodeFrom2DEditor = async (entryId) => {
     alert(err.message);
   }
 };
+
+// --- Майстерня: вкладка Кодексу та зв'язків ---
+function renderWorkshopDynamicFields() {
+  const container = document.getElementById('wsCodexDynamicFields');
+  const discId = document.getElementById('wsCodexDiscipline')?.value;
+  if (!container) return;
+
+  const disc = getDisciplineById(discId);
+  const fields = (Array.isArray(disc?.schema_fields) ? disc.schema_fields : []).filter(f => !f.hidden);
+
+  if (!fields.length) {
+    container.classList.add('hidden');
+    container.innerHTML = '';
+    return;
+  }
+
+  container.classList.remove('hidden');
+  container.innerHTML = `
+    <strong style="font-size:0.86rem; color:var(--accent);">📐 Параметри науки «${escapeHtml(disc.title)}»</strong>
+    ${fields.map(f => f.type === 'textarea'
+      ? `<textarea class="input textarea ws-dynamic-attr" data-attr-key="${escapeHtml(f.key)}" rows="2" placeholder="${escapeHtml(f.label)}"></textarea>`
+      : `<input type="text" class="input ws-dynamic-attr" data-attr-key="${escapeHtml(f.key)}" placeholder="${escapeHtml(f.label)}" />`
+    ).join('')}
+  `;
+}
+
+function initWorkshopCodex() {
+  const discSelect = document.getElementById('wsCodexDiscipline');
+  const parentSelect = document.getElementById('wsCodexParentEntry');
+  const srcSelect = document.getElementById('wsRelSource');
+  const tgtSelect = document.getElementById('wsRelTarget');
+
+  const disciplines = getAvailableDisciplines();
+  const entries = state?.codexEntries || [];
+
+  if (discSelect) {
+    const prevDisc = discSelect.value;
+    discSelect.innerHTML = disciplines.map(d =>
+      `<option value="${escapeHtml(d.id)}">${d.parent_id ? '↳ ' : ''}${escapeHtml(d.title)}</option>`
+    ).join('');
+    discSelect.value = (prevDisc && disciplines.some(d => d.id === prevDisc))
+      ? prevDisc
+      : disciplines[0].id;
+    renderWorkshopDynamicFields();
+  }
+
+  const entryOptionsHtml = entries.map(e =>
+    `<option value="${e.id}">${e.canon_status === 'official' ? '🏛️ ' : '🪶 '}${escapeHtml(e.title)} (${escapeHtml(getDisciplineTitle(e))})</option>`
+  ).join('');
+
+  if (parentSelect) {
+    parentSelect.innerHTML = `<option value="">🧬 Взято за основу (необов'язково)</option>` + entryOptionsHtml;
+  }
+  if (srcSelect) {
+    srcSelect.innerHTML = `<option value="">-- Сутність А (Предок / Гільдія / Артефакт) --</option>` + entryOptionsHtml;
+  }
+  if (tgtSelect) {
+    tgtSelect.innerHTML = `<option value="">-- Сутність Б (Нащадок / Учасник / Власник) --</option>` + entryOptionsHtml;
+  }
+
+  if (wsCodexEditorMode === '2d') renderWorkshop2DEditor();
+
+  renderWorkshopRelationsList();
+}
+
+document.getElementById('wsCodexDiscipline')?.addEventListener('change', renderWorkshopDynamicFields);
+
+document.getElementById('workshopCodexForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!getCurrentUser()) return openAuthModal();
+
+  const attributes = {};
+  document.querySelectorAll('#wsCodexDynamicFields .ws-dynamic-attr').forEach(el => {
+    const k = el.dataset.attrKey;
+    const v = el.value.trim();
+    if (k && v) attributes[k] = v;
+  });
+
+  const cleanUniverse = parseUniverseTags(document.getElementById('wsCodexUniverse').value).join(', ');
+  const disciplineId = document.getElementById('wsCodexDiscipline').value;
+
+  try {
+    await TaliesinAPI.createCodexEntry({
+      title: document.getElementById('wsCodexTitle').value,
+      category: getDisciplineById(disciplineId)?.title || disciplineId,
+      disciplineId,
+      parentEntryId: document.getElementById('wsCodexParentEntry').value || null,
+      canonStatus: document.getElementById('wsCodexCanonStatus').value,
+      attributes,
+      universe: cleanUniverse,
+      description: document.getElementById('wsCodexDesc').value,
+      isShared: document.getElementById('wsCodexShared').checked
+    });
+    e.target.reset();
+    await refresh();
+    initWorkshopCodex();
+    alert('Картку успішно додано до Кодексу!');
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+document.getElementById('workshopRelationForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!getCurrentUser()) return openAuthModal();
+
+  try {
+    await TaliesinAPI.createCodexRelation({
+      sourceId: document.getElementById('wsRelSource').value,
+      targetId: document.getElementById('wsRelTarget').value,
+      diagramType: document.getElementById('wsRelDiagramType').value,
+      roleLabel: document.getElementById('wsRelRoleLabel').value,
+      tierLevel: document.getElementById('wsRelTierLevel').value,
+      periodLabel: document.getElementById('wsRelPeriodLabel').value,
+      sortOrder: (state?.codexRelations || []).length + 1
+    });
+    e.target.reset();
+    await refresh();
+    renderWorkshopRelationsList();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+function renderWorkshopRelationsList() {
+  const listEl = document.getElementById('workshopRelationsList');
+  if (!listEl || !state) return;
+
+  const user = getCurrentUser();
+  const entries = state.codexEntries || [];
+  const relations = (state.codexRelations || []).filter(r =>
+    user && (user.role === 'admin' || r.author_id === user.id)
+  );
+
+  if (!relations.length) {
+    listEl.innerHTML = '<p class="subtitle">У вас поки немає створених зв’язків для діаграм.</p>';
+    return;
+  }
+
+  const typeNames = { tree: '🌳 Дерево', rings: '🎯 Кола', timeline: '⏳ Хронологія', web: '🕸️ Зв’язок' };
+
+  listEl.innerHTML = relations.map(r => {
+    const src = entries.find(e => e.id === r.source_id);
+    const tgt = entries.find(e => e.id === r.target_id);
+    return `
+      <div class="chapter-item" style="flex-wrap:wrap;">
+        <div>
+          <span class="badge">${typeNames[r.diagram_type] || r.diagram_type}</span>
+          <strong>${escapeHtml(src?.title || '?')}</strong> → <strong>${escapeHtml(tgt?.title || '?')}</strong>
+          ${r.role_label ? `<small class="subtitle">(${escapeHtml(r.role_label)})</small>` : ''}
+          ${r.period_label ? `<small class="subtitle">· ${escapeHtml(r.period_label)}</small>` : ''}
+        </div>
+        <button type="button" class="btn btn-danger" style="padding:0.2rem 0.6rem; font-size:0.8rem;" onclick="deleteWorkshopRelation('${r.id}')">✕</button>
+      </div>
+    `;
+  }).join('');
+}
+
+window.deleteWorkshopRelation = async (relId) => {
+  try {
+    await TaliesinAPI.deleteCodexRelation(relId);
+    await refresh();
+    renderWorkshopRelationsList();
+  } catch (err) {
+    alert(err.message);
+  }
+};
+
+// --- Перехід до картки Кодексу прямо з тексту читалки ---
+window.readerReturnContext = null;
+
+window.openCodexTermFromReader = (entryId) => {
+  if (typeof openCodexNodePreview === 'function') {
+    openCodexNodePreview(entryId);
+  }
+};
+
+window.quickUnlinkCodexTerm = async (entryId) => {
+  const ctx = window.readerReturnContext;
+  if (!ctx) return;
+
+  try {
+    if (ctx.type === 'chapter') {
+      const book = (state.books || []).find(b => b.id === ctx.bookId);
+      if (!book) return;
+      const nextLinks = (book.codex_ids || []).filter(id => id !== entryId);
+      await TaliesinAPI.updateBookCodexLinks(book.id, nextLinks);
+      await refresh();
+      readChapter(ctx.bookId, ctx.chapterId);
+    } else if (ctx.type === 'article') {
+      const art = (state.articles || []).find(a => a.id === ctx.articleId);
+      if (!art) return;
+      const nextLinks = (art.codex_ids || []).filter(id => id !== entryId);
+      const nextExcluded = deduplicateList([...(art.excluded_codex_ids || []), entryId]);
+      await TaliesinAPI.updateArticleCodexLinks(art.id, {
+        codexIds: nextLinks,
+        excludedCodexIds: nextExcluded
+      });
+      await refresh();
+      openArticle(ctx.articleId);
+    }
+  } catch (err) {
+    alert(err.message);
+  }
+};
