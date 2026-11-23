@@ -364,7 +364,7 @@ window.TaliesinAPI = {
       parent_entry_id: parentEntryId || null,
       canon_status: safeCanon,
       attributes: attributes && typeof attributes === 'object' ? attributes : {},
-      description: description.trim(),
+      description: (description || '').trim(),
       universe: universe.trim(),
       is_shared: Boolean(isShared),
       author_id: user.id,
@@ -393,7 +393,7 @@ window.TaliesinAPI = {
     const { data: profile } = await sbClient.from('profiles').select('role').eq('id', user.id).single();
     const payload = {
       title: title.trim(),
-      description: description.trim(),
+      description: (description || '').trim(),
       universe: universe.trim(),
       is_shared: Boolean(isShared)
     };
