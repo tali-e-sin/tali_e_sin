@@ -293,7 +293,11 @@
                 Зробити запис видимим іншим авторам порталу
               </label>
 
-              <button type="submit" class="btn btn-primary" style="align-self:flex-start;">Зберегти картку в Кодекс</button>
+              <input type="hidden" id="wsCodexDrawingData" />
+              <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+                <button type="button" class="btn" onclick="openShapeDrawingEditor((url) => { document.getElementById('wsCodexDrawingData').value = url; })">🎨 Намалювати фігуру</button>
+                <button type="submit" class="btn btn-primary">Зберегти картку в Кодекс</button>
+              </div>            
             </form>
 
             <hr style="margin:1.8rem 0; border-color:var(--border);" />
