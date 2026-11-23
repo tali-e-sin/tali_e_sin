@@ -111,17 +111,264 @@ document.getElementById('openWorkshopCodexBtn')?.addEventListener('click', () =>
   switchWorkshopTab('codex');
 });
 
-function populateGlobalDisciplineFilter() {
-  const select = document.getElementById('globalCodexDiscipline');
-  if (!select) return;
-  const currentVal = select.value || 'all';
+// --- Стан фільтрів Кодексу та Меню наук ---
+let codexFilterState = {
+  disciplineId: 'all',
+  includeSubdisciplines: true,
+  enabledSubIds: null, // null = усі підрозділи активні, або Set із вибраних ID
+  canonFilter: 'all',
+  discMenuMode: '1d', // '1d' | '2d'
+  expandedDiscIds: new Set()
+};
+
+function getSubdisciplinesOf(parentId) {
+  return getAvailableDisciplines().filter(d => d.parent_id === parentId);
+}
+
+window.selectCodexDiscipline = (discId) => {
+  codexFilterState.disciplineId = discId;
+  if (discId === 'all') {
+    codexFilterState.enabledSubIds = null;
+  } else {
+    const subs = getSubdisciplinesOf(discId);
+    codexFilterState.enabledSubIds = new Set(subs.map(s => s.id));
+  }
+  renderDisciplinesNavMenu();
+  renderGlobalCodex();
+};
+
+window.toggleExpandDisciplineMenu = (discId) => {
+  if (codexFilterState.expandedDiscIds.has(discId)) {
+    codexFilterState.expandedDiscIds.delete(discId);
+  } else {
+    codexFilterState.expandedDiscIds.add(discId);
+  }
+  renderDisciplinesNavMenu();
+};
+
+function renderDisciplinesNavMenu() {
+  const area = document.getElementById('codexDisciplinesMenuArea');
+  if (!area) return;
+
   const disciplines = getAvailableDisciplines();
-  select.innerHTML = `<option value="all">Усі науки та галузі</option>` +
-    disciplines.map(d => {
-      const prefix = d.parent_id ? '↳ ' : '🏛️ ';
-      return `<option value="${escapeHtml(d.id)}">${prefix}${escapeHtml(d.title)}</option>`;
-    }).join('');
-  select.value = currentVal;
+  const entries = state?.codexEntries || [];
+  const selectedId = codexFilterState.disciplineId;
+
+  document.getElementById('discMenu1DBtn')?.classList.toggle('active', codexFilterState.discMenuMode === '1d');
+  document.getElementById('discMenu2DBtn')?.classList.toggle('active', codexFilterState.discMenuMode === '2d');
+
+  // --- Режим 1D: Розгортаючийся список наук ---
+  if (codexFilterState.discMenuMode === '1d') {
+    const renderNode1D = (disc) => {
+      const children = disciplines.filter(d => d.parent_id === disc.id);
+      const hasChildren = children.length > 0;
+      const isExpanded = codexFilterState.expandedDiscIds.has(disc.id);
+      const isActive = selectedId === disc.id;
+      const count = entries.filter(e => e.discipline_id === disc.id).length;
+
+      return `
+        <div>
+          <div class="disc-menu-row">
+            ${hasChildren
+              ? `<button type="button" class="disc-expand-btn" onclick="toggleExpandDisciplineMenu('${escapeHtml(disc.id)}')" title="${isExpanded ? 'Згорнути підрозділи' : 'Розгорнути підрозділи'}">${isExpanded ? '▼' : '▶'}</button>`
+              : `<span style="width:26px; display:inline-block;"></span>`}
+            <button type="button" class="disc-pill-btn ${isActive ? 'active' : ''}" onclick="selectCodexDiscipline('${escapeHtml(disc.id)}')">
+              ${escapeHtml(disc.title)} <small style="opacity:0.8;">(${count})</small>
+            </button>
+          </div>
+          ${hasChildren && isExpanded ? `
+            <div class="disc-sub-children">
+              ${children.map(ch => renderNode1D(ch)).join('')}
+            </div>
+          ` : ''}
+        </div>
+      `;
+    };
+
+    const roots = disciplines.filter(d => !d.parent_id || !disciplines.some(p => p.id === d.parent_id));
+    area.innerHTML = `
+      <div class="disc-menu-1d-list">
+        <div class="disc-menu-row">
+          <span style="width:26px; display:inline-block;"></span>
+          <button type="button" class="disc-pill-btn ${selectedId === 'all' ? 'active' : ''}" onclick="selectCodexDiscipline('all')">
+            🌐 Усі науки та розділи (${entries.length})
+          </button>
+        </div>
+        ${roots.map(r => renderNode1D(r)).join('')}
+      </div>
+    `;
+    return;
+  }
+
+  // --- Режим 2D: Граф-дерево фундаментальних наук (клік фільтрує картки) ---
+  const roots = disciplines.filter(d => !d.parent_id || !disciplines.some(p => p.id === d.parent_id));
+  const buildDiscTree = (d, depth = 0, branchIdx = null) => {
+    const kids = disciplines.filter(c => c.parent_id === d.id);
+    return {
+      disc: d,
+      depth,
+      branchIdx,
+      children: kids.map((c, idx) => buildDiscTree(c, depth + 1, depth === 0 ? idx : branchIdx))
+    };
+  };
+
+  const forest = roots.map((r, idx) => buildDiscTree(r, 0, idx));
+  const SLOT_W = 195;
+  const LVL_H = 118;
+  let maxD = 0;
+
+  const measure = (n) => {
+    if (n.depth > maxD) maxD = n.depth;
+    if (!n.children.length) { n.span = 1; return 1; }
+    n.span = n.children.reduce((s, c) => s + measure(c), 0);
+    return n.span;
+  };
+  const totalSpan = forest.reduce((s, r) => s + measure(r), 0);
+
+  const nodes = [];
+  const edges = [];
+  const layout = (n, left) => {
+    n.x = Math.round((left + n.span / 2) * SLOT_W + 25);
+    n.y = n.depth * LVL_H + 18;
+    nodes.push(n);
+    let cur = left;
+    n.children.forEach(c => {
+      layout(c, cur);
+      edges.push({ from: n, to: c });
+      cur += c.span;
+    });
+  };
+  let startSlot = 0;
+  forest.forEach(r => { layout(r, startSlot); startSlot += r.span; });
+
+  const w = Math.max(600, totalSpan * SLOT_W + 50);
+  const h = (maxD + 1) * LVL_H + 20;
+
+  const paths = edges.map(({ from, to }) => {
+    const x1 = from.x, y1 = from.y + 52, x2 = to.x, y2 = to.y;
+    const midY = Math.round((y1 + y2) / 2);
+    const col = BRANCH_PALETTE[(to.branchIdx || 0) % BRANCH_PALETTE.length];
+    return `<path d="M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}" fill="none" stroke="${col}" stroke-width="2.2" />`;
+  }).join('');
+
+  const cards = nodes.map(n => {
+    const col = BRANCH_PALETTE[(n.branchIdx || 0) % BRANCH_PALETTE.length];
+    const isSel = selectedId === n.disc.id;
+    const cnt = entries.filter(e => e.discipline_id === n.disc.id).length;
+    return `
+      <button type="button" class="tree-2d-node" style="left:${n.x}px; top:${n.y}px; border-top:4px solid ${col}; ${isSel ? 'background:var(--accent-soft); border-color:var(--accent);' : ''}"
+        onclick="selectCodexDiscipline('${escapeHtml(n.disc.id)}')">
+        <strong style="font-size:0.82rem; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(n.disc.title)}</strong>
+        <small class="subtitle" style="font-size:0.72rem;">Карток: ${cnt}</small>
+      </button>
+    `;
+  }).join('');
+
+  area.innerHTML = `
+    <div style="margin-bottom:0.5rem;">
+      <button type="button" class="disc-pill-btn ${selectedId === 'all' ? 'active' : ''}" onclick="selectCodexDiscipline('all')">🌐 Показати всі науки</button>
+    </div>
+    <div class="tree-2d-viewport">
+      <div class="tree-2d-stage" style="width:${w}px; height:${h}px;">
+        <svg class="tree-2d-svg" viewBox="0 0 ${w} ${h}">${paths}</svg>
+        ${cards}
+      </div>
+    </div>
+  `;
+}
+
+document.getElementById('discMenu1DBtn')?.addEventListener('click', () => {
+  codexFilterState.discMenuMode = '1d';
+  renderDisciplinesNavMenu();
+});
+document.getElementById('discMenu2DBtn')?.addEventListener('click', () => {
+  codexFilterState.discMenuMode = '2d';
+  renderDisciplinesNavMenu();
+});
+
+window.openAdvancedCodexSearchModal = () => {
+  const discId = codexFilterState.disciplineId;
+  const disc = discId !== 'all' ? getDisciplineById(discId) : null;
+  const subdisciplines = disc ? getSubdisciplinesOf(disc.id) : [];
+
+  openModal(`
+    <span class="badge">⚙️ Розширений пошук Кодексу</span>
+    <h2 style="margin-top:0.5rem;">Параметри фільтрації</h2>
+
+    <div class="stack-form" style="margin-top:1rem;">
+      <label class="subtitle">Статус у порталі</label>
+      <select id="advCanonSelect" class="input">
+        <option value="all">Усі записи (Канон + Спільнота)</option>
+        <option value="official">🏛️ Тільки офіційний Канон</option>
+        <option value="community">🪶 Тільки ідеї спільноти</option>
+      </select>
+
+      ${disc ? `
+        <hr style="border-color:var(--border);" />
+        <div>
+          <strong>Обрана наука: ${escapeHtml(disc.title)}</strong>
+          ${subdisciplines.length ? `
+            <label class="subtitle" style="display:flex; align-items:center; gap:0.5rem; margin-top:0.6rem; cursor:pointer;">
+              <input type="checkbox" id="advIncludeSubsCheck" ${codexFilterState.includeSubdisciplines ? 'checked' : ''} />
+              Показувати також картки підрозділів цієї науки (${subdisciplines.length})
+            </label>
+            <div id="advSubdisciplinesBox" class="${codexFilterState.includeSubdisciplines ? '' : 'hidden'}" style="margin-top:0.65rem; padding:0.75rem; background:var(--bg-subtle); border-radius:10px; display:flex; flex-direction:column; gap:0.4rem;">
+              <small class="subtitle">Оберіть конкретні підрозділи для показу:</small>
+              ${subdisciplines.map(sub => {
+                const isChecked = !codexFilterState.enabledSubIds || codexFilterState.enabledSubIds.has(sub.id);
+                return `
+                  <label style="display:flex; align-items:center; gap:0.45rem; font-size:0.88rem; cursor:pointer;">
+                    <input type="checkbox" class="adv-sub-check" value="${escapeHtml(sub.id)}" ${isChecked ? 'checked' : ''} />
+                    ${escapeHtml(sub.title)}
+                  </label>
+                `;
+              }).join('')}
+            </div>
+          ` : `<p class="subtitle" style="margin-top:0.35rem;">У цієї науки поки немає підрозділів.</p>`}
+        </div>
+      ` : `<p class="subtitle">Підказка: оберіть конкретну науку в навігаторі вище, щоб налаштувати фільтр її підрозділів.</p>`}
+
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.5rem;">
+        <button type="button" id="applyAdvCodexSearchBtn" class="btn btn-primary">Застосувати параметри</button>
+        <button type="button" class="btn" onclick="closeModal()">Закрити</button>
+      </div>
+    </div>
+  `);
+
+  document.getElementById('advCanonSelect').value = codexFilterState.canonFilter;
+
+  const incCheck = document.getElementById('advIncludeSubsCheck');
+  const subsBox = document.getElementById('advSubdisciplinesBox');
+  if (incCheck && subsBox) {
+    incCheck.onchange = () => subsBox.classList.toggle('hidden', !incCheck.checked);
+  }
+
+  document.getElementById('applyAdvCodexSearchBtn').onclick = () => {
+    codexFilterState.canonFilter = document.getElementById('advCanonSelect').value;
+    if (incCheck) {
+      codexFilterState.includeSubdisciplines = incCheck.checked;
+      const checkedIds = [...document.querySelectorAll('.adv-sub-check:checked')].map(el => el.value);
+      codexFilterState.enabledSubIds = new Set(checkedIds);
+    }
+    closeModal();
+    renderGlobalCodex();
+  };
+};
+
+document.getElementById('openAdvancedCodexSearchBtn')?.addEventListener('click', openAdvancedCodexSearchModal);
+document.getElementById('resetCodexFiltersBtn')?.addEventListener('click', () => {
+  codexFilterState.disciplineId = 'all';
+  codexFilterState.canonFilter = 'all';
+  codexFilterState.includeSubdisciplines = true;
+  codexFilterState.enabledSubIds = null;
+  const searchEl = document.getElementById('globalCodexSearch');
+  if (searchEl) searchEl.value = '';
+  renderDisciplinesNavMenu();
+  renderGlobalCodex();
+});
+
+function populateGlobalDisciplineFilter() {
+  renderDisciplinesNavMenu();
 }
 
 function renderGlobalCodex() {
@@ -130,16 +377,24 @@ function renderGlobalCodex() {
 
   const user = getCurrentUser();
   const q = (document.getElementById('globalCodexSearch')?.value || '').toLowerCase().replace(/^#+/, '').trim();
-  const discFilter = document.getElementById('globalCodexDiscipline')?.value || 'all';
-  const canonFilter = document.getElementById('globalCodexCanonFilter')?.value || 'all';
+  const discFilter = codexFilterState.disciplineId || 'all';
+  const canonFilter = codexFilterState.canonFilter || 'all';
 
   const allowedDisciplineIds = new Set();
   if (discFilter !== 'all') {
     allowedDisciplineIds.add(discFilter);
-    getAvailableDisciplines().forEach(d => {
-      if (d.parent_id === discFilter) allowedDisciplineIds.add(d.id);
-    });
+    if (codexFilterState.includeSubdisciplines) {
+      getSubdisciplinesOf(discFilter).forEach(sub => {
+        if (!codexFilterState.enabledSubIds || codexFilterState.enabledSubIds.has(sub.id)) {
+          allowedDisciplineIds.add(sub.id);
+        }
+      });
+    }
   }
+
+  const hasActiveFilters = discFilter !== 'all' || canonFilter !== 'all' || Boolean(q);
+  document.getElementById('resetCodexFiltersBtn')?.classList.toggle('hidden', !hasActiveFilters);
+  document.getElementById('advSearchActiveBadge')?.classList.toggle('hidden', canonFilter === 'all' && codexFilterState.includeSubdisciplines);
 
   const visibleEntries = (state.codexEntries || []).filter(e => {
     const canSee = e.is_shared || (user && (e.author_id === user.id || user.role === 'admin'));
