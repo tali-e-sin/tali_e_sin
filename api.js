@@ -34,8 +34,6 @@ window.TaliesinAPI = {
 
     const currentUserId = sessionData?.session?.user?.id || null;
 
-    visual_style: (e.visual_style && typeof e.visual_style === 'object') ? e.visual_style : {},
-
     const users = (usersRes.data || []).map(u => ({
       ...u,
       bio: u.bio || '',
@@ -48,17 +46,21 @@ window.TaliesinAPI = {
       readingProgress: (u.reading_progress && typeof u.reading_progress === 'object') ? u.reading_progress : {}
     }));
 
+    const codexEntries = (codexRes.data || []).map(e => ({
+      ...e,
+      visual_style: (e.visual_style && typeof e.visual_style === 'object') ? e.visual_style : {}
+    }));
+
     return {
       users,
       currentUserId,
       articles: articlesRes.data || [],
       books: booksRes.data || [],
-      codexEntries: codexRes.data || [],
+      codexEntries,
       codexDisciplines: disciplinesRes.data || [],
       codexRelations: relationsRes.data || []
     };
-  },
-
+    
   async register({ name, email, password }) {
     const cleanEmail = email.trim().toLowerCase();
     const cleanName = name.trim();
@@ -381,7 +383,8 @@ window.TaliesinAPI = {
     attributes,
     description,
     universe = '',
-    isShared = true
+    isShared = true,
+    visualStyle
   }) {
     const { data: { user } } = await sbClient.auth.getUser();
     if (!user) throw new Error('Потрібна авторизація');
@@ -398,6 +401,7 @@ window.TaliesinAPI = {
     if (disciplineId !== undefined) payload.discipline_id = disciplineId || null;
     if (parentEntryId !== undefined) payload.parent_entry_id = parentEntryId || null;
     if (attributes !== undefined) payload.attributes = attributes;
+    if (visualStyle !== undefined) payload.visual_style = visualStyle;
     if (canonStatus !== undefined) {
       payload.canon_status = (canonStatus === 'official' && profile?.role !== 'admin') ? 'pending' : canonStatus;
     }
@@ -407,11 +411,9 @@ window.TaliesinAPI = {
       .update(payload)
       .eq('id', entryId);
 
-    if (payload.visualStyle !== undefined) patch.visual_style = payload.visualStyle;
-
     if (error) throw new Error(error.message);
   },
-
+  
   async setCodexCanonStatus(entryId, nextStatus) {
     const { error } = await sbClient
       .from('codex_entries')
