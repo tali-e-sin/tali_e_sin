@@ -470,7 +470,7 @@ function renderGlobalCodex() {
 
           ${renderEntryAttributes(entry)}
 
-          <p style="white-space:pre-line; color:var(--text-main); margin:0.4rem 0 0;">${escapeHtml(entry.description)}</p>
+          ${entry.description ? `<p style="white-space:pre-line; color:var(--text-main); margin:0.4rem 0 0;">${escapeHtml(entry.description)}</p>` : ''}
 
           ${childVariants.length ? `
             <div style="margin-top:0.65rem; font-size:0.82rem; color:var(--text-muted);">
@@ -573,7 +573,7 @@ window.openEditCodexModal = (entryId, returnBookId = null) => {
       </select>
       <input type="text" id="editCodexUniverse" class="input" maxlength="120" placeholder="Світи через кому або #..." />
       <div id="editCodexDynamicFields" class="stack-form" style="padding:0.8rem; background:var(--bg-subtle); border-radius:12px;"></div>
-      <textarea id="editCodexDesc" class="input textarea" rows="5" maxlength="2000" required></textarea>
+      <textarea id="editCodexDesc" class="input textarea" rows="5" maxlength="2000"></textarea>
       <label class="subtitle" style="display:flex; align-items:center; gap:0.45rem; cursor:pointer;">
         <input type="checkbox" id="editCodexShared" />
         Зробити запис відкритим для всіх авторів порталу
@@ -605,12 +605,7 @@ window.openEditCodexModal = (entryId, returnBookId = null) => {
       return;
     }
     box.classList.remove('hidden');
-    box.innerHTML = fields.map(f => {
-      const val = escapeHtml(curAttrs[f.key] || '');
-      return f.type === 'textarea'
-        ? `<textarea class="input textarea edit-dyn-attr" data-attr-key="${escapeHtml(f.key)}" rows="2" placeholder="${escapeHtml(f.label)}">${val}</textarea>`
-        : `<input type="text" class="input edit-dyn-attr" data-attr-key="${escapeHtml(f.key)}" placeholder="${escapeHtml(f.label)}" value="${val}" />`;
-    }).join('');
+    box.innerHTML = fields.map(f => renderDynamicFieldControl(f, curAttrs[f.key] || '', 'edit-dyn-attr')).join('');
   };
 
   renderEditDynamic();
@@ -1200,7 +1195,7 @@ window.openCodexNodePreview = (entryId) => {
 
     ${renderEntryAttributes(entry)}
 
-    <div style="white-space:pre-line; margin:0.8rem 0 1.2rem; color:var(--text-main);">${escapeHtml(entry.description)}</div>
+    ${entry.description ? `<div style="white-space:pre-line; margin:0.8rem 0 1.2rem; color:var(--text-main);">${escapeHtml(entry.description)}</div>` : ''}
 
     <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1.2rem;">
       <button type="button" class="btn btn-primary" onclick="closeModal(); openEntryDiagram('${entry.id}')">🌳 Зробити центром діаграми</button>
@@ -1523,7 +1518,7 @@ window.openNode2DAddChildModal = (parentId) => {
         <input type="text" id="n2dChildRole" class="input" style="flex:1;" placeholder="Роль зв'язку (напр. Син, Учень, Підвид)" />
         <input type="text" id="n2dChildYear" class="input" style="width:140px;" placeholder="Рік / Епоха (напр. 892)" />
       </div>
-      <textarea id="n2dChildDesc" class="input textarea" rows="3" placeholder="Короткий опис сутності..." required></textarea>
+      <textarea id="n2dChildDesc" class="input textarea" rows="3" placeholder="Короткий опис сутності (необов'язково) ..."></textarea>
       <button type="submit" class="btn btn-primary">Створити та приєднати до дерева</button>
     </form>
   `);
@@ -1734,6 +1729,39 @@ window.deleteNodeFrom2DEditor = async (entryId) => {
 };
 
 // --- Майстерня: вкладка Кодексу та зв'язків ---
+function renderDynamicFieldControl(f, value = '', extraClass = 'ws-dynamic-attr') {
+  const key = escapeHtml(f.key);
+  const label = escapeHtml(f.label);
+  const val = escapeHtml(value);
+  const type = f.type || 'text';
+
+  if (type === 'textarea') {
+    return `<textarea class="input textarea ${extraClass}" data-attr-key="${key}" rows="2" placeholder="${label}">${val}</textarea>`;
+  }
+  if (type === 'number') {
+    return `
+      <div>
+        <small class="subtitle" style="display:block; margin-bottom:0.2rem;">🔢 ${label}</small>
+        <input type="number" step="any" class="input ${extraClass}" data-attr-key="${key}" placeholder="${label}" value="${val}" />
+      </div>`;
+  }
+  if (type === 'date') {
+    return `
+      <div>
+        <small class="subtitle" style="display:block; margin-bottom:0.2rem;">📅 ${label}</small>
+        <input type="date" class="input ${extraClass}" data-attr-key="${key}" value="${val}" />
+      </div>`;
+  }
+  if (type === 'unicode') {
+    return `
+      <div>
+        <small class="subtitle" style="display:block; margin-bottom:0.2rem;">🔣 ${label} (Символ / Емодзі / Руна)</small>
+        <input type="text" maxlength="16" class="input ${extraClass}" data-attr-key="${key}" placeholder="Напр. ⚔️, 🜂, ᚠ, ★" value="${val}" style="font-size:1.15rem;" />
+      </div>`;
+  }
+  return `<input type="text" class="input ${extraClass}" data-attr-key="${key}" placeholder="${label}" value="${val}" />`;
+}
+
 function renderWorkshopDynamicFields() {
   const container = document.getElementById('wsCodexDynamicFields');
   const discId = document.getElementById('wsCodexDiscipline')?.value;
@@ -1751,10 +1779,7 @@ function renderWorkshopDynamicFields() {
   container.classList.remove('hidden');
   container.innerHTML = `
     <strong style="font-size:0.86rem; color:var(--accent);">📐 Параметри науки «${escapeHtml(disc.title)}»</strong>
-    ${fields.map(f => f.type === 'textarea'
-      ? `<textarea class="input textarea ws-dynamic-attr" data-attr-key="${escapeHtml(f.key)}" rows="2" placeholder="${escapeHtml(f.label)}"></textarea>`
-      : `<input type="text" class="input ws-dynamic-attr" data-attr-key="${escapeHtml(f.key)}" placeholder="${escapeHtml(f.label)}" />`
-    ).join('')}
+    ${fields.map(f => renderDynamicFieldControl(f, '', 'ws-dynamic-attr')).join('')}
   `;
 }
 
