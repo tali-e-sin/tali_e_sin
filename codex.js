@@ -479,8 +479,10 @@ function renderGlobalCodex() {
 
           ${renderEntryAttributes(entry)}
 
-          ${entry.description ? `<p style="white-space:pre-line; color:var(--text-main); margin:0.4rem 0 0;">${escapeHtml(entry.description)}</p>` : ''}
+          ${renderEntryDrawingField(entry)}
 
+          ${entry.description ? `<p style="white-space:pre-line; color:var(--text-main); margin:0.4rem 0 0;">${escapeHtml(entry.description)}</p>` : ''}
+          
           ${childVariants.length ? `
             <div style="margin-top:0.65rem; font-size:0.82rem; color:var(--text-muted);">
               🌿 Варіації у світах (${childVariants.length}):
@@ -723,25 +725,47 @@ function getEntriesScopedByDiscipline() {
 }
 
 function extractNumericYear(entry, relations = []) {
-  // 1. Шукаємо в атрибутах картки (рік народження, дата заснування тощо)
   const attrs = entry?.attributes || {};
   for (const [k, v] of Object.entries(attrs)) {
-    if (/year|birth|date|рік|народж|дата/i.test(k)) {
-      const m = String(v).match(/-?\d{1,5}/);
-      if (m) return Number(m[0]);
+    if (/year|birth|date|era|рік|народж|дата|епоха/i.test(k)) {
+      const parsed = parseHistoricalYear(v);
+      if (parsed !== null) return parsed;
     }
   }
   for (const v of Object.values(attrs)) {
-    const m = String(v).match(/\b(-?\d{3,4})\b/);
-    if (m) return Number(m[0]);
+    const parsed = parseHistoricalYear(v);
+    if (parsed !== null) return parsed;
   }
-  // 2. Шукаємо в period_label вхідного зв'язку
   const inRel = relations.find(r => r.target_id === entry.id && r.period_label);
   if (inRel) {
-    const m = String(inRel.period_label).match(/-?\d{1,5}/);
-    if (m) return Number(m[0]);
+    const parsed = parseHistoricalYear(inRel.period_label);
+    if (parsed !== null) return parsed;
   }
   return null;
+}
+
+function parseHistoricalYear(rawValue) {
+  if (rawValue === undefined || rawValue === null) return null;
+  const str = String(rawValue).trim();
+  if (!str) return null;
+
+  const isBce = /(до\s*н\.?\s*е\.?|bce|bc)\b/i.test(str);
+  const match = str.match(/-?\d{1,5}/);
+  if (!match) return null;
+
+  let num = Number(match[0]);
+  if (Number.isNaN(num)) return null;
+
+  if (isBce && num > 0) {
+    num = -num;
+  }
+  return num;
+}
+
+function formatHistoricalYear(year) {
+  if (year === null || year === undefined || Number.isNaN(Number(year))) return '';
+  const n = Number(year);
+  return n < 0 ? `${n} (${Math.abs(n)} до н.е.)` : `${n} р.`;
 }
 
 function extractEventStage(entry, relations = [], defaultOrder = 0) {
@@ -937,6 +961,29 @@ function buildInteractiveTreeHtml({ canvas, rootIds, isEditable = false }) {
 
   const hasSecondaryRoots = rootIds.length > 1;
 
+  const NODE_SLOT_W = 210;
+  const LEVEL_H = 148;
+  const placedForWidth = new Set();
+
+  const measureSpan = (nodeId) => {
+    const item = nodeMap.get(nodeId);
+    if (!item || placedForWidth.has(nodeId)) return 0.5;
+    placedForWidth.add(nodeId);
+    const activeKids = item.childrenIds.filter(cid => !placedForWidth.has(cid));
+    if (!activeKids.length) {
+      item.leafSpan = 1;
+      return 1;
+    }
+    item.leafSpan = activeKids.reduce((sum, cid) => sum + measureSpan(cid), 0);
+    return item.leafSpan;
+  };
+
+  let totalLeaves = 0;
+  rootIds.forEach(rId => { totalLeaves += measureSpan(rId); });
+  totalLeaves = Math.max(1, totalLeaves);
+
+  const stageWidth = Math.max(660, totalLeaves * NODE_SLOT_W + 80);
+
   const toolbarHtml = `
     <div class="tree-controls-bar">
       <div>
@@ -963,6 +1010,7 @@ function buildInteractiveTreeHtml({ canvas, rootIds, isEditable = false }) {
         <button type="button" class="btn ${treeColorBranches ? 'btn-primary' : ''}" style="padding:0.32rem 0.7rem; font-size:0.78rem;" onclick="toggleTreeBranchColors()">
           🌈 Гілки
         </button>
+        ${renderGraphZoomToolbarHtml(stageWidth)}
       </div>
     </div>
     ${hasSecondaryRoots ? `
@@ -973,7 +1021,6 @@ function buildInteractiveTreeHtml({ canvas, rootIds, isEditable = false }) {
       </div>
     ` : ''}
   `;
-
   // --- 1D Режим ---
   if (!isEditable && treeVisualSubmode === '1d') {
     const rendered1D = new Set();
@@ -1899,7 +1946,7 @@ function renderDynamicFieldControl(f, value = '', extraClass = 'ws-dynamic-attr'
     return `
       <div>
         <small class="subtitle" style="display:block; margin-bottom:0.2rem;">📅 ${label}</small>
-        <input type="text" class="input ${extraClass}" data-attr-key="${key}" placeholder="Напр., 865, 14.05.1024 або 300 до н.е." value="${val}" />
+        <input type="text" class="input ${extraClass}" data-attr-key="${key}" placeholder="Напр., -350, 300 до н.е., 865 або 14.05.1024" value="${val}" />
       </div>`;
   }
   
@@ -2033,6 +2080,52 @@ document.getElementById('workshopRelationForm')?.addEventListener('submit', asyn
   }
 });
 
+function applyParentTemplateToWorkshopForm(parentId) {
+  if (!parentId) return;
+  const parent = (state?.codexEntries || []).find(e => e.id === parentId);
+  if (!parent) return;
+
+  const discSelect = document.getElementById('wsCodexDiscipline');
+  const universeInput = document.getElementById('wsCodexUniverse');
+  const descTextarea = document.getElementById('wsCodexDesc');
+
+  if (discSelect && parent.discipline_id && [...discSelect.options].some(o => o.value === parent.discipline_id)) {
+    discSelect.value = parent.discipline_id;
+  }
+
+  // Перемальовуємо динамічні поля науки та заповнюємо їх значеннями з прототипу
+  renderWorkshopDynamicFields();
+  const parentAttrs = (parent.attributes && typeof parent.attributes === 'object') ? parent.attributes : {};
+  document.querySelectorAll('#wsCodexDynamicFields .ws-dynamic-attr').forEach(el => {
+    const key = el.dataset.attrKey;
+    if (key && parentAttrs[key] !== undefined && String(parentAttrs[key]).trim() !== '') {
+      el.value = String(parentAttrs[key]);
+    }
+  });
+
+  if (universeInput && !universeInput.value.trim() && parent.universe) {
+    universeInput.value = parent.universe;
+  }
+  if (descTextarea && !descTextarea.value.trim() && parent.description) {
+    descTextarea.value = parent.description;
+  }
+}
+
+function renderEntryDrawingField(entry) {
+  const drawing = entry?.attributes?.custom_drawing;
+  if (!drawing || typeof drawing !== 'string') return '';
+  return `
+    <div class="codex-drawing-box">
+      <div class="codex-drawing-label">🎨 Графічний макет / Фігура</div>
+      <img src="${escapeHtml(drawing)}" alt="Малюнок для ${escapeHtml(entry.title)}" class="codex-drawing-img" />
+    </div>
+  `;
+}
+
+document.getElementById('wsCodexParentEntry')?.addEventListener('change', (e) => {
+  applyParentTemplateToWorkshopForm(e.target.value);
+});
+
 function renderWorkshopRelationsList() {
   const listEl = document.getElementById('workshopRelationsList');
   if (!listEl || !state) return;
@@ -2114,3 +2207,164 @@ window.quickUnlinkCodexTerm = async (entryId) => {
     alert(err.message);
   }
 };
+
+window.openShapeDrawingEditor = (onSaveCallback) => {
+  openModal(`
+    <span class="badge">🎨 Графічний редактор фігур</span>
+    <h2 style="margin-top:0.5rem;">Побудова геометричної фігури / макета</h2>
+
+    <div style="display:flex; gap:0.4rem; flex-wrap:wrap; align-items:center; margin:0.75rem 0;">
+      <select id="drawToolSelect" class="input" style="padding:0.4rem 0.65rem;">
+        <option value="free">✏️ Вільна лінія</option>
+        <option value="line">📏 Відрізок</option>
+        <option value="circle">⭕ Коло</option>
+        <option value="rect">⬜ Прямокутник</option>
+        <option value="eraser">🧽 Гумка</option>
+      </select>
+      <input type="color" id="drawColorInput" value="#c5962c" style="width:40px; height:36px; border:none; background:none; cursor:pointer;" />
+      <input type="range" id="drawSizeInput" min="1" max="12" value="3" title="Товщина лінії" />
+      <button type="button" id="drawClearBtn" class="btn btn-danger" style="padding:0.35rem 0.7rem; font-size:0.82rem;">🗑️ Очистити</button>
+    </div>
+
+    <div style="border:1px solid var(--border); border-radius:12px; overflow:hidden; background:#ffffff;">
+      <canvas id="shapeEditorCanvas" width="560" height="320" style="width:100%; height:320px; display:block; cursor:crosshair; touch-action:none;"></canvas>
+    </div>
+
+    <div style="display:flex; gap:0.5rem; margin-top:0.9rem;">
+      <button type="button" id="saveShapeDrawingBtn" class="btn btn-primary">💾 Зберегти фігуру в картку</button>
+      <button type="button" class="btn" onclick="closeModal()">Скасувати</button>
+    </div>
+  `);
+
+  const canvas = document.getElementById('shapeEditorCanvas');
+  const ctx = canvas.getContext('2d');
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  let drawing = false;
+  let startX = 0;
+  let startY = 0;
+  let snapshot = null;
+
+  const getPos = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return {
+      x: ((clientX - rect.left) / rect.width) * canvas.width,
+      y: ((clientY - rect.top) / rect.height) * canvas.height
+    };
+  };
+
+  const applyStyle = () => {
+    const tool = document.getElementById('drawToolSelect').value;
+    const size = Number(document.getElementById('drawSizeInput').value) || 3;
+    ctx.strokeStyle = tool === 'eraser' ? '#ffffff' : document.getElementById('drawColorInput').value;
+    ctx.lineWidth = tool === 'eraser' ? size * 3 : size;
+  };
+
+  const startDraw = (e) => {
+    e.preventDefault();
+    drawing = true;
+    applyStyle();
+    const pos = getPos(e);
+    startX = pos.x;
+    startY = pos.y;
+    snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    if (document.getElementById('drawToolSelect').value === 'free' || document.getElementById('drawToolSelect').value === 'eraser') {
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+    }
+  };
+
+  const moveDraw = (e) => {
+    if (!drawing) return;
+    e.preventDefault();
+    const tool = document.getElementById('drawToolSelect').value;
+    const pos = getPos(e);
+    applyStyle();
+
+    if (tool === 'free' || tool === 'eraser') {
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
+      return;
+    }
+
+    ctx.putImageData(snapshot, 0, 0);
+    ctx.beginPath();
+    if (tool === 'line') {
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
+    } else if (tool === 'rect') {
+      ctx.rect(startX, startY, pos.x - startX, pos.y - startY);
+      ctx.stroke();
+    } else if (tool === 'circle') {
+      const r = Math.hypot(pos.x - startX, pos.y - startY);
+      ctx.arc(startX, startY, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  };
+
+  const endDraw = () => { drawing = false; };
+
+  canvas.addEventListener('mousedown', startDraw);
+  canvas.addEventListener('mousemove', moveDraw);
+  window.addEventListener('mouseup', endDraw);
+  canvas.addEventListener('touchstart', startDraw, { passive: false });
+  canvas.addEventListener('touchmove', moveDraw, { passive: false });
+  window.addEventListener('touchend', endDraw);
+
+  document.getElementById('drawClearBtn').onclick = () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  };
+
+  document.getElementById('saveShapeDrawingBtn').onclick = () => {
+    const dataUrl = canvas.toDataURL('image/png');
+    closeModal();
+    if (typeof onSaveCallback === 'function') onSaveCallback(dataUrl);
+  };
+};
+
+let codexGraphZoom = 1.0;
+
+window.setCodexGraphZoom = (nextZoom) => {
+  codexGraphZoom = Math.max(0.35, Math.min(2.5, Number(nextZoom.toFixed(2))));
+  refreshActiveTreeCanvases();
+  if (codexFilterState.discMenuMode === '2d') {
+    renderDisciplinesNavMenu();
+  }
+};
+
+window.resetCodexGraphZoom = () => {
+  codexGraphZoom = 1.0;
+  refreshActiveTreeCanvases();
+  if (codexFilterState.discMenuMode === '2d') {
+    renderDisciplinesNavMenu();
+  }
+};
+
+window.fitCodexGraphToViewport = (stageWidth = 900) => {
+  const viewports = [...document.querySelectorAll('.tree-2d-viewport')];
+  const activeViewport = viewports.find(v => v.offsetParent !== null) || viewports[0];
+  const availW = Math.max(280, (activeViewport?.clientWidth || 720) - 24);
+  const ratio = availW / Math.max(280, Number(stageWidth) || 720);
+  codexGraphZoom = Math.max(0.25, Math.min(2.5, Number(ratio.toFixed(2))));
+  refreshActiveTreeCanvases();
+  if (codexFilterState.discMenuMode === '2d') {
+    renderDisciplinesNavMenu();
+  }
+};
+
+function renderGraphZoomToolbarHtml(stageWidth = 720) {
+  const pct = Math.round(codexGraphZoom * 100);
+  return `
+    <div style="display:inline-flex; align-items:center; gap:0.25rem; background:var(--bg-subtle); border:1px solid var(--border); border-radius:999px; padding:0.15rem 0.45rem;">
+      <button type="button" class="btn" style="padding:0.15rem 0.5rem; font-size:0.78rem;" onclick="setCodexGraphZoom(codexGraphZoom - 0.15)" title="Зменшити масштаб">🔍 −</button>
+      <span style="font-size:0.76rem; font-weight:700; min-width:42px; text-align:center;">${pct}%</span>
+      <button type="button" class="btn" style="padding:0.15rem 0.5rem; font-size:0.78rem;" onclick="setCodexGraphZoom(codexGraphZoom + 0.15)" title="Наблизити">🔍 +</button>
+      <button type="button" class="btn" style="padding:0.15rem 0.45rem; font-size:0.74rem;" onclick="fitCodexGraphToViewport(${stageWidth})" title="Помістити весь граф у вікно">⛶</button>
+      <button type="button" class="btn" style="padding:0.15rem 0.45rem; font-size:0.74rem;" onclick="resetCodexGraphZoom()" title="Скинути масштаб (100%)">↺</button>
+    </div>
+  `;
+}
