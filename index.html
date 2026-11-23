@@ -197,6 +197,7 @@
           <button type="button" class="tab-btn active" data-editor="article">📜 Стаття</button>
           <button type="button" class="tab-btn" data-editor="book">📚 Книга / Глава</button>
           <button type="button" class="tab-btn" data-editor="codex">📖 Кодекс та зв'язки</button>
+          <button type="button" class="tab-btn" data-editor="story3d">🎬 3D Сюжет</button>
           <button type="button" class="tab-btn admin-only hidden" data-editor="schema">⚙️ Архітектор баз (Адмін)</button>
         </div>
 
@@ -324,6 +325,15 @@
           </div>
         </div>
 
+        <!-- Вкладка 3.5: 3D Макет сюжету -->
+          <div id="workshopStory3DPanel" class="hidden">
+            <h2>🎬 3D Архітектор сюжетних ліній (1D / 2D / 3D)</h2>
+            <p class="subtitle" style="margin-bottom:1rem;">
+              Будуйте переплетення сюжетних ліній (вигляд зверху), часові занурення у спогади чи прогнози майбутнього (вигляд збоку) та оглядайте сюжет у 3D. Чернетки зберігаються локально на вашому пристрої.
+            </p>
+            <div id="story3DWorkspaceArea"></div>
+          </div>
+
         <!-- 4. Вкладка: Архітектор баз даних (лише для Адмінів) -->
         <div id="workshopSchemaPanel" class="hidden">
           <h2>⚙️ Архітектор дисциплін та параметрів баз</h2>
@@ -422,6 +432,7 @@
   <script src="api.js"></script>
   <script src="utils.js"></script>
   <script src="codex.js"></script>
+  <script src="story-engine.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
