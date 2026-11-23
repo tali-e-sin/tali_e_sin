@@ -34,6 +34,8 @@ window.TaliesinAPI = {
 
     const currentUserId = sessionData?.session?.user?.id || null;
 
+    visual_style: (e.visual_style && typeof e.visual_style === 'object') ? e.visual_style : {},
+
     const users = (usersRes.data || []).map(u => ({
       ...u,
       bio: u.bio || '',
@@ -404,6 +406,8 @@ window.TaliesinAPI = {
       .from('codex_entries')
       .update(payload)
       .eq('id', entryId);
+
+    if (payload.visualStyle !== undefined) patch.visual_style = payload.visualStyle;
 
     if (error) throw new Error(error.message);
   },
