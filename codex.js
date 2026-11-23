@@ -1063,9 +1063,8 @@ function buildInteractiveTreeHtml({ canvas, rootIds, isEditable = false }) {
   }
 
   // --- 2D Граф (За поколіннями або за Шкалою часу з декадами) ---
-  const NODE_SLOT_W = 210;
-  const LEVEL_H = 148;
-  const placedForWidth = new Set();
+  const positioned = new Set();
+  const assignX = (nodeId, leftSlot) => {
 
   const measureSpan = (nodeId) => {
     const item = nodeMap.get(nodeId);
