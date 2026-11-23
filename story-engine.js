@@ -113,6 +113,7 @@ const StoryProjections = {
   yaw: -0.55,
   pitch: 0.38,
   zoom: 1.0,
+  splitZoom: 1.0,
   activeUniverse: 'all',
   selectedNodeId: null,
 
@@ -139,6 +140,19 @@ const StoryProjections = {
     };
   },
 
+  setSplitZoom(nextZoom) {
+    this.splitZoom = Math.max(0.35, Math.min(2.2, Number(nextZoom.toFixed(2))));
+    this.renderWorkspace('story3DWorkspaceArea');
+  },
+
+  fitSplitToViewport(svgW = 720) {
+    const viewports = [...document.querySelectorAll('#story3DWorkspaceArea .tree-2d-viewport')];
+    const availW = Math.max(280, (viewports[0]?.clientWidth || 720) - 24);
+    const ratio = availW / Math.max(280, Number(svgW) || 720);
+    this.splitZoom = Math.max(0.25, Math.min(2.2, Number(ratio.toFixed(2))));
+    this.renderWorkspace('story3DWorkspaceArea');
+  },
+
   renderWorkspace(containerId = 'story3DWorkspaceArea') {
     const root = document.getElementById(containerId);
     if (!root) return;
@@ -149,6 +163,8 @@ const StoryProjections = {
     );
 
     const selNode = graph.nodes.find(n => n.id === this.selectedNodeId) || null;
+    const maxStep = Math.max(5, ...graph.nodes.map(n => n.stepX));
+    const estimatedSvgW = Math.max(680, maxStep * 160 + 100);
 
     const headerHtml = `
       <div class="tree-controls-bar" style="margin-bottom:0.85rem;">
@@ -158,6 +174,7 @@ const StoryProjections = {
             ${universes.map(u => `<option value="${escapeHtml(u)}" ${this.activeUniverse === u ? 'selected' : ''}>#${escapeHtml(u)}</option>`).join('')}
           </select>
           <button type="button" class="btn btn-primary" onclick="StoryProjections.openAddSceneModal()">+ Додати сцену</button>
+          <button type="button" class="btn" style="padding:0.15rem 0.45rem; font-size:0.74rem;" onclick="StoryProjections.fitSplitToViewport(${estimatedSvgW})" title="Помістити всю сцену у вікно">⛶</button>
           <button type="button" class="btn" onclick="StoryProjections.publishDraftToCodex()" title="Зберегти чернетку у хмару Supabase">☁️ Опублікувати</button>
         </div>
 
