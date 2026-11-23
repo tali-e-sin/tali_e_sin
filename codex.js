@@ -675,13 +675,6 @@ const DECADE_TINTS = [
   'rgba(20, 184, 166, 0.08)'
 ];
 
-window.setRingsSubmode = (mode) => { ringsVisualSubmode = mode; renderCodexDiagram(); };
-window.setTreeSubmode = (mode) => { treeVisualSubmode = mode; renderCodexDiagram(); };
-window.setTreeLayoutAxis = (axis) => { treeLayoutAxis = axis; renderCodexDiagram(); };
-window.setSecondaryRootsGenMode = (mode) => { secondaryRootsGenMode = mode; renderCodexDiagram(); };
-window.toggleTreeGenerations = () => { treeHighlightGenerations = !treeHighlightGenerations; renderCodexDiagram(); };
-window.toggleTreeBranchColors = () => { treeColorBranches = !treeColorBranches; renderCodexDiagram(); };
-
 window.removeCompareRoot = (id) => {
   compareRootIds = compareRootIds.filter(x => x !== id);
   populateDiagramControls();
@@ -1146,7 +1139,7 @@ function buildInteractiveTreeHtml({ canvas, rootIds, isEditable = false }) {
     const to = nodeMap.get(edge.toId);
     if (!from || !to) return '';
     const x1 = from.x;
-    const y1 = from.y + 58;
+    const y1 = from.y + 52;
     const x2 = to.x;
     const y2 = to.y;
     const midY = Math.round((y1 + y2) / 2);
@@ -1161,7 +1154,7 @@ function buildInteractiveTreeHtml({ canvas, rootIds, isEditable = false }) {
       const to = nodeMap.get(edge.toId);
       if (!from || !to) return '';
       const midX = Math.round((from.x + to.x) / 2);
-      const midY = Math.round((from.y + 58 + to.y) / 2);
+      const midY = Math.round((from.y + 52 + to.y) / 2);
       const color = getBranchColor(edge.branchIdx, to.node.visual_style?.color);
       return `<span class="tree-2d-edge-tag" style="left:${midX}px; top:${midY}px; border-color:${color}; color:${color};">${escapeHtml(edge.roleLabel)}</span>`;
     }).join('');
@@ -1204,8 +1197,7 @@ function buildInteractiveTreeHtml({ canvas, rootIds, isEditable = false }) {
     <div class="tree-2d-viewport">
       <div class="tree-2d-stage" style="width:${stageWidth}px; height:${stageHeight}px;">
         ${bandsHtml}
-        <svg class="tree-2d-svg" viewBox="0 0 ${stageWidth} ${stageHeight}">${svgPathsHtml}</svg>
-        ${edgeTagsHtml}
+        <svg class="tree-2d-svg" width="${stageWidth}" height="${stageHeight}" viewBox="0 0 ${stageWidth} ${stageHeight}">${svgPathsHtml}</svg>        ${edgeTagsHtml}
         ${nodes2DHtml}
       </div>
     </div>
@@ -1307,6 +1299,20 @@ window.openEntryDiagram = (entryId) => {
   }
   renderCodexDiagram();
 };
+
+function refreshActiveTreeCanvases() {
+  renderCodexDiagram();
+  if (typeof wsCodexEditorMode !== 'undefined' && wsCodexEditorMode === '2d') {
+    renderWorkshop2DEditor();
+  }
+}
+
+window.setRingsSubmode = (mode) => { ringsVisualSubmode = mode; renderCodexDiagram(); };
+window.setTreeSubmode = (mode) => { treeVisualSubmode = mode; refreshActiveTreeCanvases(); };
+window.setTreeLayoutAxis = (axis) => { treeLayoutAxis = axis; refreshActiveTreeCanvases(); };
+window.setSecondaryRootsGenMode = (mode) => { secondaryRootsGenMode = mode; refreshActiveTreeCanvases(); };
+window.toggleTreeGenerations = () => { treeHighlightGenerations = !treeHighlightGenerations; refreshActiveTreeCanvases(); };
+window.toggleTreeBranchColors = () => { treeColorBranches = !treeColorBranches; refreshActiveTreeCanvases(); };
 
 function renderCodexDiagram() {
   const canvas = document.getElementById('diagramCanvasArea');
