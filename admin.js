@@ -35,6 +35,12 @@ window.renderSchemaArchitect = function () {
             <button type="button" class="btn" style="font-size:0.82rem;" onclick="openAddDisciplineFieldModal('${escapeHtml(d.id)}')">+ Додати параметр поля</button>
           </div>
 
+          <div style="display:flex; gap:0.35rem; flex-wrap:wrap;">
+              <button type="button" class="btn" style="font-size:0.8rem;" onclick="openEditDisciplineModal('${escapeHtml(d.id)}')" title="Редагувати назву, батьківську галузь та залежності">✏️ Наука</button>
+              <button type="button" class="btn" style="font-size:0.8rem;" onclick="openAddDisciplineFieldModal('${escapeHtml(d.id)}')">+ Поле</button>
+              <button type="button" class="btn btn-danger" style="font-size:0.8rem;" onclick="deleteDisciplineBase('${escapeHtml(d.id)}')" title="Видалити всю базу/науку">🗑️</button>
+            </div>
+
           <div style="display:flex; flex-direction:column; gap:0.4rem;">
             ${fields.length
               ? fields.map((f, idx) => `
@@ -99,6 +105,85 @@ window.renderSchemaArchitect = function () {
           </div>
         `).join('')
       : '<p class="subtitle">Заявок на узгодження в Канон зараз немає.</p>';
+  }
+};
+
+window.openEditDisciplineModal = (discId) => {
+  const disc = getDisciplineById(discId);
+  if (!disc) return;
+  const otherDiscs = (state.codexDisciplines || []).filter(d => d.id !== disc.id);
+
+  openModal(`
+    <span class="badge">✏️ Редагування науки / бази</span>
+    <h2 style="margin-top:0.5rem;">${escapeHtml(disc.title)}</h2>
+    <p class="subtitle">Системний ключ <strong>[${escapeHtml(disc.id)}]</strong> незмінний для збереження цілісності посилань.</p>
+
+    <form id="editDisciplineMetaForm" class="stack-form" style="margin-top:1rem;">
+      <label class="subtitle">Назва науки / розділу</label>
+      <input type="text" id="editDiscTitle" class="input" required />
+      <label class="subtitle">Батьківська галузь</label>
+      <select id="editDiscParent" class="input">
+        <option value="">-- Коренева галузь --</option>
+        ${otherDiscs.map(d => `<option value="${escapeHtml(d.id)}">${escapeHtml(d.title)}</option>`).join('')}
+      </select>
+      <label class="subtitle">Спирається на науки (ключі через кому)</label>
+      <input type="text" id="editDiscDepends" class="input" />
+      <button type="submit" class="btn btn-primary">Зберегти зміни науки</button>
+    </form>
+  `);
+
+  document.getElementById('editDiscTitle').value = disc.title || '';
+  document.getElementById('editDiscParent').value = disc.parent_id || '';
+  document.getElementById('editDiscDepends').value = (disc.depends_on || []).join(', ');
+
+  document.getElementById('editDisciplineMetaForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const deps = document.getElementById('editDiscDepends').value
+      .split(',')
+      .map(s => s.trim().toLowerCase())
+      .filter(Boolean);
+
+    try {
+      await TaliesinAPI.saveCodexDiscipline({
+        id: disc.id,
+        title: document.getElementById('editDiscTitle').value,
+        parentId: document.getElementById('editDiscParent').value || null,
+        dependsOn: deps,
+        defaultDiagram: disc.default_diagram,
+        schemaFields: disc.schema_fields || [],
+        sortOrder: disc.sort_order
+      });
+      closeModal();
+      await refresh();
+      renderSchemaArchitect();
+      if (typeof initWorkshopCodex === 'function') initWorkshopCodex();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+};
+
+window.deleteDisciplineBase = async (discId) => {
+  const disc = getDisciplineById(discId);
+  if (!disc) return;
+
+  const cardsCount = (state.codexEntries || []).filter(e => e.discipline_id === disc.id).length;
+  const subCount = (state.codexDisciplines || []).filter(d => d.parent_id === disc.id).length;
+
+  const msg = `⚠️ Ви збираєтесь видалити базу/науку «${disc.title}» [${disc.id}].\n` +
+    `• Прив'язаних карток Кодексу: ${cardsCount} (вони залишаться в Кодексі без прив'язки до цієї науки)\n` +
+    `• Дочірніх підрозділів: ${subCount} (вони стануть кореневими)\n\n` +
+    `Видалити цю науку назавжди?`;
+
+  if (!confirm(msg)) return;
+
+  try {
+    await TaliesinAPI.deleteCodexDiscipline(disc.id);
+    await refresh();
+    renderSchemaArchitect();
+    if (typeof initWorkshopCodex === 'function') initWorkshopCodex();
+  } catch (err) {
+    alert(err.message);
   }
 };
 
