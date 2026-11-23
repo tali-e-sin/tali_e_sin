@@ -1162,8 +1162,6 @@ function buildInteractiveTreeHtml({ canvas, rootIds, isEditable = false }) {
     stageHeight = (maxDepth + 1) * LEVEL_H + 40;
   }
 
-  const stageWidth = Math.max(660, totalLeaves * NODE_SLOT_W + 80);
-
   const svgPathsHtml = edgesList.map(edge => {
     const from = nodeMap.get(edge.fromId);
     const to = nodeMap.get(edge.toId);
@@ -1225,10 +1223,13 @@ function buildInteractiveTreeHtml({ canvas, rootIds, isEditable = false }) {
   canvas.innerHTML = `
     ${toolbarHtml}
     <div class="tree-2d-viewport">
-      <div class="tree-2d-stage" style="width:${stageWidth}px; height:${stageHeight}px;">
-        ${bandsHtml}
-        <svg class="tree-2d-svg" width="${stageWidth}" height="${stageHeight}" viewBox="0 0 ${stageWidth} ${stageHeight}">${svgPathsHtml}</svg>        ${edgeTagsHtml}
-        ${nodes2DHtml}
+      <div style="width:${Math.round(stageWidth * codexGraphZoom)}px; height:${Math.round(stageHeight * codexGraphZoom)}px;">
+        <div class="tree-2d-stage" style="width:${stageWidth}px; height:${stageHeight}px; transform:scale(${codexGraphZoom}); transform-origin:top left;">
+          ${bandsHtml}
+          <svg class="tree-2d-svg" width="${stageWidth}" height="${stageHeight}" viewBox="0 0 ${stageWidth} ${stageHeight}">${svgPathsHtml}</svg>
+          ${edgeTagsHtml}
+          ${nodes2DHtml}
+        </div>
       </div>
     </div>
   `;
