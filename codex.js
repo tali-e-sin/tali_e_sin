@@ -1145,6 +1145,328 @@ function buildInteractiveTreeHtml({ canvas, rootIds, isEditable = false }) {
   `;
 }
 
+window.openCodexNodePreview = (entryId) => {
+  const entry = (state?.codexEntries || []).find(e => e.id === entryId);
+  if (!entry) return;
+
+  const entries = state.codexEntries || [];
+  const relations = state.codexRelations || [];
+  const parentEntry = entry.parent_entry_id ? entries.find(p => p.id === entry.parent_entry_id) : null;
+  const universeTagsHtml = renderUniverseTags(entry.universe, false);
+
+  const relatedList = relations
+    .filter(r => r.source_id === entry.id || r.target_id === entry.id)
+    .map(r => {
+      const isSource = r.source_id === entry.id;
+      const other = entries.find(e => e.id === (isSource ? r.target_id : r.source_id));
+      if (!other) return '';
+      const arrow = isSource ? '→' : '←';
+      const role = r.role_label ? ` (${escapeHtml(r.role_label)})` : '';
+      const period = r.period_label ? ` · ${escapeHtml(r.period_label)}` : '';
+      return `
+        <div class="chapter-item" style="flex-wrap:wrap;">
+          <span>${arrow} <strong>${escapeHtml(other.title)}</strong><small class="subtitle">${role}${period}</small></span>
+          <button type="button" class="btn" style="padding:0.2rem 0.6rem; font-size:0.8rem;" onclick="openCodexNodePreview('${other.id}')">Відкрити</button>
+        </div>
+      `;
+    })
+    .filter(Boolean)
+    .join('');
+
+  openModal(`
+    <div style="display:flex; gap:0.4rem; flex-wrap:wrap; align-items:center; padding-right:2rem;">
+      ${renderCanonBadge(entry.canon_status)}
+      <span class="badge">${escapeHtml(getDisciplineTitle(entry))}</span>
+    </div>
+    <h2 style="margin-top:0.55rem;">${escapeHtml(entry.title)}</h2>
+
+    ${window.readerReturnContext ? `
+      <div style="margin-bottom:0.75rem;">
+        <button type="button" class="btn btn-primary" style="font-size:0.84rem;" onclick="returnFromCodexPreview()">
+          ← Повернутися до читання
+        </button>
+      </div>
+    ` : ''}
+
+    ${parentEntry ? `
+      <div style="margin-bottom:0.5rem;">
+        <button type="button" class="lineage-pill" onclick="openCodexNodePreview('${parentEntry.id}')">
+          🧬 Базується на: <strong>${escapeHtml(parentEntry.title)}</strong>
+        </button>
+      </div>
+    ` : ''}
+
+    ${universeTagsHtml ? `<div style="display:flex; gap:0.35rem; flex-wrap:wrap; margin-bottom:0.65rem;">${universeTagsHtml}</div>` : ''}
+
+    ${renderEntryAttributes(entry)}
+
+    <div style="white-space:pre-line; margin:0.8rem 0 1.2rem; color:var(--text-main);">${escapeHtml(entry.description)}</div>
+
+    <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1.2rem;">
+      <button type="button" class="btn btn-primary" onclick="closeModal(); openEntryDiagram('${entry.id}')">🌳 Зробити центром діаграми</button>
+      <button type="button" class="btn" onclick="closeModal(); focusCodexEntry('${entry.id}')">📋 Показати в картках</button>
+    </div>
+
+    ${relatedList ? `
+      <hr style="margin:1rem 0; border-color:var(--border);" />
+      <h4>🔗 Пов'язані сутності</h4>
+      <div>${relatedList}</div>
+    ` : ''}
+  `);
+};
+
+window.returnFromCodexPreview = () => {
+  const ctx = window.readerReturnContext;
+  window.readerReturnContext = null;
+  if (!ctx) return closeModal();
+  if (ctx.type === 'chapter') {
+    readChapter(ctx.bookId, ctx.chapterId);
+  } else if (ctx.type === 'article') {
+    openArticle(ctx.articleId);
+  } else {
+    closeModal();
+  }
+};
+
+window.openEntryDiagram = (entryId) => {
+  switchCodexMode('diagrams');
+  const rootSelect = document.getElementById('diagramRootSelect');
+  if (rootSelect) {
+    if (![...rootSelect.options].some(o => o.value === entryId)) {
+      selectCodexDiscipline('all');
+      populateDiagramControls();
+    }
+    rootSelect.value = entryId;
+  }
+  renderCodexDiagram();
+};
+
+function renderCodexDiagram() {
+  const canvas = document.getElementById('diagramCanvasArea');
+  if (!canvas || !state) return;
+
+  const type = document.getElementById('diagramTypeSelect')?.value || 'tree';
+  const rootId = document.getElementById('diagramRootSelect')?.value || '';
+  const entries = state.codexEntries || [];
+  const relations = state.codexRelations || [];
+
+  if (!rootId) {
+    canvas.innerHTML = '<p class="subtitle">Оберіть кореневу сутність у списку вище (або натисніть 🌳 на будь-якій картці Кодексу), щоб побудувати діаграму.</p>';
+    return;
+  }
+
+  const rootEntry = entries.find(e => e.id === rootId);
+  if (!rootEntry) return;
+
+  // 1. Дерево / Порівняння родів / Шкала часу
+  if (type === 'tree') {
+    buildInteractiveTreeHtml({
+      canvas,
+      rootIds: [rootId, ...compareRootIds],
+      isEditable: false
+    });
+    return;
+  }
+
+  // 2. Концентричні кола / Соціальна піраміда
+  if (type === 'rings') {
+    const orgRels = relations.filter(r => r.source_id === rootId && r.diagram_type === 'rings');
+    if (!orgRels.length) {
+      canvas.innerHTML = `<p class="subtitle">Для «${escapeHtml(rootEntry.title)}» ще не додано рівнів організації. Додайте зв'язки типу «Кола / Піраміда» у Майстерні.</p>`;
+      return;
+    }
+
+    const tiers = {};
+    orgRels.forEach(r => {
+      const lvl = Number(r.tier_level) || 1;
+      if (!tiers[lvl]) tiers[lvl] = [];
+      tiers[lvl].push(r);
+    });
+    const sortedLevels = Object.keys(tiers).map(Number).sort((a, b) => a - b);
+
+    const switcherHtml = `
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.6rem; margin-bottom:1rem;">
+        <div>
+          <h3 style="margin:0;">🎯 Структура: ${escapeHtml(rootEntry.title)}</h3>
+          <small class="subtitle">Від внутрішнього ядра (Рівень 1) до зовнішнього кола клієнтів і союзників</small>
+        </div>
+        <div class="tabs" style="margin:0;">
+          <button type="button" class="tab-btn ${ringsVisualSubmode === 'orbit' ? 'active' : ''}" onclick="setRingsSubmode('orbit')">⭕ Кола</button>
+          <button type="button" class="tab-btn ${ringsVisualSubmode === 'pyramid' ? 'active' : ''}" onclick="setRingsSubmode('pyramid')">🔺 Піраміда</button>
+        </div>
+      </div>
+    `;
+
+    if (ringsVisualSubmode === 'orbit') {
+      const ringCount = sortedLevels.length;
+      const minRadius = 95;
+      const maxRadius = 230;
+      const step = ringCount > 1 ? (maxRadius - minRadius) / (ringCount - 1) : 0;
+
+      const circlesSvg = sortedLevels.map((_, idx) => {
+        const r = minRadius + idx * step;
+        return `<circle cx="270" cy="270" r="${r}" class="orbit-ring-circle" />`;
+      }).join('');
+
+      const nodesHtml = sortedLevels.map((lvl, idx) => {
+        const r = minRadius + idx * step;
+        const members = tiers[lvl];
+        return members.map((rel, mIdx) => {
+          const member = entries.find(e => e.id === rel.target_id);
+          if (!member) return '';
+          const angle = ((2 * Math.PI) / members.length) * mIdx - Math.PI / 2 + idx * 0.45;
+          const leftPct = ((270 + r * Math.cos(angle)) / 540) * 100;
+          const topPct = ((270 + r * Math.sin(angle)) / 540) * 100;
+          const label = rel.role_label ? `${member.title} · ${rel.role_label}` : member.title;
+          return `
+            <button type="button" class="orbit-node-btn" style="left:${leftPct.toFixed(1)}%; top:${topPct.toFixed(1)}%;"
+              onclick="openCodexNodePreview('${member.id}')" title="Рівень ${lvl}: ${escapeHtml(label)}">
+              ${escapeHtml(member.title)}
+            </button>
+          `;
+        }).join('');
+      }).join('');
+
+      const legendHtml = sortedLevels.map(lvl => {
+        const tierLabel = tiers[lvl][0]?.role_label || `Рівень ${lvl}`;
+        return `<span class="badge">Кільце ${lvl}: ${escapeHtml(tierLabel)} (${tiers[lvl].length})</span>`;
+      }).join('');
+
+      canvas.innerHTML = `
+        ${switcherHtml}
+        <div class="orbit-view-wrap">
+          <div style="display:flex; gap:0.4rem; flex-wrap:wrap; justify-content:center;">${legendHtml}</div>
+          <div class="orbit-svg-box">
+            <svg viewBox="0 0 540 540">${circlesSvg}</svg>
+            <button type="button" class="orbit-center-pill" onclick="openCodexNodePreview('${rootEntry.id}')">${escapeHtml(rootEntry.title)}</button>
+            ${nodesHtml}
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    canvas.innerHTML = `
+      ${switcherHtml}
+      ${sortedLevels.map((lvl, idx) => {
+        const widthPct = Math.min(100, 48 + idx * 14);
+        const tierLabel = tiers[lvl][0]?.role_label || `Рівень ${lvl}`;
+        return `
+          <div class="pyramid-tier" style="max-width:${widthPct}%;">
+            <div class="pyramid-tier-header">Рівень ${lvl} · ${escapeHtml(tierLabel)}</div>
+            <div class="pyramid-members">
+              ${tiers[lvl].map(r => {
+                const member = entries.find(e => e.id === r.target_id);
+                return member
+                  ? `<button type="button" class="btn" onclick="openCodexNodePreview('${member.id}')">${escapeHtml(member.title)}${r.role_label ? ` (${escapeHtml(r.role_label)})` : ''}</button>`
+                  : '';
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }).join('')}
+    `;
+    return;
+  }
+
+  // 3. Хронологія володіння
+  if (type === 'timeline') {
+    const timeRels = relations
+      .filter(r => r.source_id === rootId && r.diagram_type === 'timeline')
+      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+
+    if (!timeRels.length) {
+      canvas.innerHTML = `<p class="subtitle">Для «${escapeHtml(rootEntry.title)}» ще не зафіксовано хронології. Додайте зв'язки типу «Хронологія» у Майстерні.</p>`;
+      return;
+    }
+
+    canvas.innerHTML = `
+      <h3>⏳ Хронологія володіння / історії: ${escapeHtml(rootEntry.title)}</h3>
+      <div class="timeline-track" style="margin-top:1rem;">
+        ${timeRels.map(r => {
+          const holder = entries.find(e => e.id === r.target_id);
+          return `
+            <div class="timeline-step" style="${holder ? 'cursor:pointer;' : ''}" ${holder ? `onclick="openCodexNodePreview('${holder.id}')"` : ''}>
+              ${r.period_label ? `<span class="badge">${escapeHtml(r.period_label)}</span>` : ''}
+              <div style="margin-top:0.35rem;">
+                <strong>${holder ? escapeHtml(holder.title) : 'Невідомий власник'}</strong>
+                ${r.role_label ? ` — <span class="subtitle">${escapeHtml(r.role_label)}</span>` : ''}
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+    return;
+  }
+
+  // 4. Мережа зв'язків 360° (Web)
+  if (type === 'web') {
+    const incoming = [];
+    const outgoing = [];
+
+    if (rootEntry.parent_entry_id) {
+      const proto = entries.find(e => e.id === rootEntry.parent_entry_id);
+      if (proto) incoming.push({ entry: proto, label: '🧬 Взято за основу', period: '' });
+    }
+    entries.filter(e => e.parent_entry_id === rootId).forEach(fork => {
+      outgoing.push({ entry: fork, label: '🌿 Варіація у світі', period: '' });
+    });
+
+    relations.forEach(r => {
+      if (r.target_id === rootId) {
+        const src = entries.find(e => e.id === r.source_id);
+        if (src) incoming.push({ entry: src, label: r.role_label || r.diagram_type, period: r.period_label });
+      }
+      if (r.source_id === rootId) {
+        const tgt = entries.find(e => e.id === r.target_id);
+        if (tgt) outgoing.push({ entry: tgt, label: r.role_label || r.diagram_type, period: r.period_label });
+      }
+    });
+
+    const renderEdgeCard = (item, direction) => `
+      <div class="web-edge-card" onclick="openCodexNodePreview('${item.entry.id}')">
+        <div style="display:flex; justify-content:space-between; gap:0.4rem; align-items:center; flex-wrap:wrap;">
+          <span class="badge">${direction} ${escapeHtml(item.label)}</span>
+          ${item.period ? `<small class="subtitle">${escapeHtml(item.period)}</small>` : ''}
+        </div>
+        <strong style="display:block; margin-top:0.35rem;">${escapeHtml(item.entry.title)}</strong>
+        <small class="subtitle">${escapeHtml(getDisciplineTitle(item.entry))}</small>
+      </div>
+    `;
+
+    canvas.innerHTML = `
+      <h3>🕸️ Мережа зв'язків навколо: ${escapeHtml(rootEntry.title)}</h3>
+      <p class="subtitle">Усі вхідні джерела (зліва) та вихідні зв'язки (справа)</p>
+      <div class="web-graph-grid">
+        <div class="web-column">
+          ${incoming.length
+            ? incoming.map(i => renderEdgeCard(i, '←')).join('')
+            : '<p class="subtitle" style="text-align:center;">Вхідних зв’язків немає</p>'}
+        </div>
+
+        <div class="web-hub-card" style="cursor:pointer;" onclick="openCodexNodePreview('${rootEntry.id}')">
+          ${renderCanonBadge(rootEntry.canon_status)}
+          <h3 style="margin:0.4rem 0 0.2rem;">${escapeHtml(rootEntry.title)}</h3>
+          <small class="subtitle">${escapeHtml(getDisciplineTitle(rootEntry))}</small>
+        </div>
+
+        <div class="web-column">
+          ${outgoing.length
+            ? outgoing.map(o => renderEdgeCard(o, '→')).join('')
+            : '<p class="subtitle" style="text-align:center;">Вихідних зв’язків немає</p>'}
+        </div>
+      </div>
+    `;
+  }
+}
+
+document.getElementById('diagramTypeSelect')?.addEventListener('change', renderCodexDiagram);
+document.getElementById('diagramRootSelect')?.addEventListener('change', () => {
+  populateDiagramControls();
+  renderCodexDiagram();
+});
+
 // --- Майстерня: Перемикач 1D Форми / 2D Візуальний редактор дерева ---
 let wsCodexEditorMode = '1d';
 
