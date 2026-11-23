@@ -753,6 +753,7 @@ window.openCodexNodePreview = (entryId) => {
     <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1.2rem;">
       <button type="button" class="btn btn-primary" onclick="closeModal(); openEntryDiagram('${entry.id}')">🌳 Зробити центром діаграми</button>
       <button type="button" class="btn" onclick="closeModal(); focusCodexEntry('${entry.id}')">📋 Показати в картках</button>
+      <button type="button" class="btn btn-danger" style="padding:0.2rem 0.6rem; font-size:0.8rem;" onclick="deleteWorkshopRelation('${r.id}')">✕</button>
     </div>
 
     ${relatedList ? `
