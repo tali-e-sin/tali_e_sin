@@ -9,7 +9,10 @@ const FALLBACK_DISCIPLINES = [
   { id: 'mythology', title: 'Міфологія, Релігія та Філософія', parent_id: 'humanities', schema_fields: [] },
   { id: 'physics', title: 'Фізика та Космологія', parent_id: 'natural', schema_fields: [] },
   { id: 'mathematics', title: 'Математика', parent_id: 'formal', schema_fields: [] },
-  { id: 'arcana', title: 'Магія та Астральні явища', parent_id: 'applied', schema_fields: [] }
+  { id: 'arcana', title: 'Магія та Астральні явища', parent_id: 'applied', schema_fields: [] },
+  { id: 'geometry', title: 'Геометрія та Примітиви', parent_id: 'mathematics', schema_fields: [] },
+  { id: 'components', title: 'Аналітика та Складені компоненти', parent_id: null, schema_fields: [] },
+  { id: 'dramaturgy', title: 'Драматургія та Архетипи сцен', parent_id: null, schema_fields: [] },
 ];
 
 function getAvailableDisciplines() {
@@ -34,6 +37,11 @@ function renderCanonBadge(status) {
     return `<span class="badge canon-badge-pending" title="Очікує перевірки адміном">⏳ На узгодженні</span>`;
   }
   return '';
+}
+
+function renderSystemPrimitiveBadge(entry) {
+  if (!entry?.is_system_primitive) return '';
+  return `<span class="badge" style="background:var(--bg-subtle); border:1px solid var(--accent); color:var(--accent);" title="Використовується рушієм побудови графів та сцен сайту">⚙️ Елемент рушія</span>`;
 }
 
 function renderEntryAttributes(entry) {
@@ -448,6 +456,7 @@ function renderGlobalCodex() {
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.5rem;">
             <h3 style="margin:0;">${escapeHtml(entry.title)}</h3>
             <div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">
+            ${renderSystemPrimitiveBadge(entry)}
               ${renderCanonBadge(entry.canon_status)}
               <span class="badge">${escapeHtml(getDisciplineTitle(entry))}</span>
               ${!entry.is_shared ? `<span class="badge">🔒 Приватний</span>` : ''}
@@ -555,6 +564,7 @@ window.openEditCodexModal = (entryId, returnBookId = null) => {
 
   const disciplines = getAvailableDisciplines();
   const entries = (state.codexEntries || []).filter(e => e.id !== entry.id);
+  const isAdmin = user.role === 'admin';
 
   openModal(`
     <span class="badge">✏️ Редагування запису Кодексу</span>
@@ -578,6 +588,12 @@ window.openEditCodexModal = (entryId, returnBookId = null) => {
         <input type="checkbox" id="editCodexShared" />
         Зробити запис відкритим для всіх авторів порталу
       </label>
+      ${isAdmin ? `
+        <label class="subtitle" style="display:flex; align-items:center; gap:0.45rem; cursor:pointer;">
+          <input type="checkbox" id="editCodexSystemPrimitive" />
+          ⚙️ Системний елемент побудови сайту (фігура / компонент / архетип)
+        </label>
+      ` : ''}
       <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
         <button type="submit" class="btn btn-primary">Зберегти зміни</button>
         ${returnBookId
@@ -593,6 +609,9 @@ window.openEditCodexModal = (entryId, returnBookId = null) => {
   document.getElementById('editCodexUniverse').value = entry.universe || '';
   document.getElementById('editCodexDesc').value = entry.description || '';
   document.getElementById('editCodexShared').checked = Boolean(entry.is_shared);
+  if (isAdmin && document.getElementById('editCodexSystemPrimitive')) {
+    document.getElementById('editCodexSystemPrimitive').checked = Boolean(entry.is_system_primitive);
+  }
 
   const renderEditDynamic = () => {
     const box = document.getElementById('editCodexDynamicFields');
@@ -630,7 +649,8 @@ window.openEditCodexModal = (entryId, returnBookId = null) => {
         attributes: updatedAttrs,
         universe: cleanUniverse,
         description: document.getElementById('editCodexDesc').value,
-        isShared: document.getElementById('editCodexShared').checked
+        isShared: document.getElementById('editCodexShared').checked,
+        isSystemPrimitive: isAdmin ? Boolean(document.getElementById('editCodexSystemPrimitive')?.checked) : undefined
       });
       await refresh();
       if (returnBookId) {
@@ -1928,7 +1948,8 @@ document.getElementById('workshopCodexForm')?.addEventListener('submit', async (
       attributes,
       universe: cleanUniverse,
       description: document.getElementById('wsCodexDesc').value,
-      isShared: document.getElementById('wsCodexShared').checked
+      isShared: document.getElementById('wsCodexShared').checked,
+      isSystemPrimitive: Boolean(document.getElementById('wsCodexSystemPrimitive')?.checked)
     });
     e.target.reset();
     await refresh();
