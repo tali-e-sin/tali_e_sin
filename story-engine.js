@@ -733,3 +733,338 @@ const StoryProjections = {
     }
   }
 };
+
+// ============================================================================
+// УНІВЕРСАЛЬНИЙ ПРОЕКТОР 1D / 2D / 3D ДЛЯ ДІАГРАМ КОДЕКСУ, КНИГ ТА СТАТЕЙ
+// ============================================================================
+const UniversalProjectionEngine = {
+  yaw: -0.45,
+  pitch: 0.32,
+  zoom: 1.0,
+
+  projectPoint(x, y, z, cx = 360, cy = 215) {
+    const cosY = Math.cos(this.yaw);
+    const sinY = Math.sin(this.yaw);
+    const cosP = Math.cos(this.pitch);
+    const sinP = Math.sin(this.pitch);
+
+    const x1 = x * cosY - z * sinY;
+    const z1 = x * sinY + z * cosY;
+    const y2 = y * cosP - z1 * sinP;
+    const z2 = y * sinP + z1 * cosP;
+
+    const fov = 560;
+    const scale = (fov / (fov + z2 + 240)) * this.zoom;
+    return {
+      sx: Math.round(cx + x1 * scale),
+      sy: Math.round(cy + y2 * scale),
+      scale,
+      depth: z2
+    };
+  },
+
+  // Побудова 3D-графа для будь-якої сутності Кодексу (дерево, кільця, хронологія, мережа)
+  buildCodexEntityGraph3D(rootId, diagramType = 'tree') {
+    const entries = state?.codexEntries || [];
+    const relations = state?.codexRelations || [];
+    const root = entries.find(e => e.id === rootId);
+    if (!root) return { nodes: [], edges: [] };
+
+    const nodes = [];
+    const edges = [];
+    const added = new Set();
+
+    const pushNode = (entry, x, y, z, shapeCode = 'rect_box', color = '') => {
+      if (!entry || added.has(entry.id)) return;
+      added.add(entry.id);
+      nodes.push({
+        id: entry.id,
+        title: entry.title,
+        subtitle: getDisciplineTitle(entry),
+        x, y, z,
+        shapeCode: entry.visual_style?.shape || shapeCode,
+        color: entry.visual_style?.color || color
+      });
+    };
+
+    if (diagramType === 'rings') {
+      pushNode(root, 0, 0, 0, 'circle_sphere', '#c5962c');
+      const orgRels = relations.filter(r => r.source_id === rootId && r.diagram_type === 'rings');
+      const byLvl = {};
+      orgRels.forEach(r => {
+        const l = Number(r.tier_level) || 1;
+        if (!byLvl[l]) byLvl[l] = [];
+        byLvl[l].push(r);
+      });
+      Object.entries(byLvl).forEach(([lvlStr, rels]) => {
+        const lvl = Number(lvlStr);
+        const radius = 95 + (lvl - 1) * 75;
+        const zLevel = (lvl - 1) * 45;
+        rels.forEach((rel, idx) => {
+          const member = entries.find(e => e.id === rel.target_id);
+          if (!member) return;
+          const angle = ((2 * Math.PI) / rels.length) * idx;
+          pushNode(
+            member,
+            Math.round(radius * Math.cos(angle)),
+            Math.round(radius * Math.sin(angle)),
+            zLevel,
+            'oval_capsule',
+            StoryProjections.LINE_COLORS[lvl % StoryProjections.LINE_COLORS.length]
+          );
+          edges.push({ from: root.id, to: member.id, label: rel.role_label || `Рівень ${lvl}` });
+        });
+      });
+    } else if (diagramType === 'timeline') {
+      pushNode(root, -160, 0, 0, 'diamond_octahedron', '#c5962c');
+      const timeRels = relations
+        .filter(r => r.source_id === rootId && r.diagram_type === 'timeline')
+        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+      timeRels.forEach((rel, idx) => {
+        const holder = entries.find(e => e.id === rel.target_id);
+        if (!holder) return;
+        pushNode(holder, -40 + idx * 125, (idx % 2 === 0 ? -35 : 35), idx * 35, 'oval_capsule', '#2b6cb0');
+        edges.push({ from: idx === 0 ? root.id : timeRels[idx - 1].target_id, to: holder.id, label: rel.period_label || '' });
+      });
+    } else {
+      // Дерево або мережа зв'язків Web 360°
+      pushNode(root, 0, 0, 0, 'circle_sphere', '#c5962c');
+      const related = relations.filter(r => r.source_id === rootId || r.target_id === rootId);
+      related.forEach((rel, idx) => {
+        const isOut = rel.source_id === rootId;
+        const otherId = isOut ? rel.target_id : rel.source_id;
+        const other = entries.find(e => e.id === otherId);
+        if (!other) return;
+        const angle = ((2 * Math.PI) / Math.max(1, related.length)) * idx;
+        const radius = 155;
+        pushNode(
+          other,
+          Math.round(radius * Math.cos(angle)),
+          Math.round(radius * Math.sin(angle)),
+          isOut ? 55 : -55,
+          isOut ? 'rect_box' : 'oval_capsule',
+          isOut ? '#2e8b57' : '#805ad5'
+        );
+        edges.push({
+          from: isOut ? root.id : other.id,
+          to: isOut ? other.id : root.id,
+          label: rel.role_label || ''
+        });
+      });
+    }
+
+    return { nodes, edges };
+  },
+
+  renderInteractive3D({ container, graph, svgId = 'univ3DSvg', onNodeClickFn = 'openCodexNodePreview', rerenderCall = '' }) {
+    if (!container) return;
+    if (!graph.nodes.length) {
+      container.innerHTML = '<p class="subtitle">Недостатньо вузлів для побудови 3D-проекції.</p>';
+      return;
+    }
+
+    const projected = graph.nodes.map(n => ({
+      node: n,
+      ...this.projectPoint(n.x, n.y, n.z)
+    }));
+    const posById = new Map(projected.map(p => [p.node.id, p]));
+
+    const edgesSvg = graph.edges.map(e => {
+      const p1 = posById.get(e.from);
+      const p2 = posById.get(e.to);
+      if (!p1 || !p2) return '';
+      const col = p2.node.color || 'var(--accent)';
+      return CodexPrimitives.renderSvgEdge({ x1: p1.sx, y1: p1.sy, x2: p2.sx, y2: p2.sy, color: col });
+    }).join('');
+
+    const sortedByDepth = [...projected].sort((a, b) => b.depth - a.depth);
+    const nodesSvg = sortedByDepth.map(item => {
+      const n = item.node;
+      const col = n.color || 'var(--accent)';
+      const w = Math.round(128 * item.scale);
+      const h = Math.round(40 * item.scale);
+      const fontSize = Math.max(9, Math.round(11.5 * item.scale));
+      const shape = CodexPrimitives.renderSvgNodeShape({
+        shapeCode: n.shapeCode || 'rect_box',
+        cx: item.sx,
+        cy: item.sy,
+        w,
+        h,
+        stroke: col
+      });
+
+      const clickAttr = n.clickable !== false && onNodeClickFn
+        ? `style="cursor:pointer;" onclick="${onNodeClickFn}('${escapeHtml(n.id)}')"`
+        : '';
+
+      return `
+        <g ${clickAttr}>
+          ${shape}
+          <text x="${item.sx}" y="${item.sy + 4}" text-anchor="middle" fill="var(--text-main)" font-size="${fontSize}" font-weight="700">
+            ${escapeHtml(n.title.slice(0, 17))}
+          </text>
+        </g>
+      `;
+    }).join('');
+
+    container.innerHTML = `
+      <div class="tree-2d-viewport" style="user-select:none;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; padding:0.3rem 0.5rem;">
+          <small class="subtitle">🖱️ Потягніть мишею, щоб обертати 3D-граф · Клік по вузлу відкриває картку</small>
+          <div style="display:flex; gap:0.35rem;">
+            <button type="button" class="btn" style="padding:0.2rem 0.6rem; font-size:0.78rem;" onclick="UniversalProjectionEngine.zoom = Math.min(1.8, UniversalProjectionEngine.zoom + 0.15); ${rerenderCall}">🔍 +</button>
+            <button type="button" class="btn" style="padding:0.2rem 0.6rem; font-size:0.78rem;" onclick="UniversalProjectionEngine.zoom = Math.max(0.5, UniversalProjectionEngine.zoom - 0.15); ${rerenderCall}">🔍 −</button>
+            <button type="button" class="btn" style="padding:0.2rem 0.6rem; font-size:0.78rem;" onclick="UniversalProjectionEngine.yaw = -0.45; UniversalProjectionEngine.pitch = 0.32; UniversalProjectionEngine.zoom = 1; ${rerenderCall}">↺ Скинути</button>
+          </div>
+        </div>
+        <svg id="${svgId}" width="720" height="430" viewBox="0 0 720 430" style="width:100%; height:430px; cursor:grab; display:block;">
+          ${edgesSvg}
+          ${nodesSvg}
+        </svg>
+      </div>
+    `;
+
+    const svg = document.getElementById(svgId);
+    if (!svg) return;
+    let dragging = false;
+    let lastX = 0;
+    let lastY = 0;
+
+    svg.onmousedown = (e) => { dragging = true; lastX = e.clientX; lastY = e.clientY; svg.style.cursor = 'grabbing'; };
+    window.onmousemove = (e) => {
+      if (!dragging) return;
+      this.yaw += (e.clientX - lastX) * 0.008;
+      this.pitch = Math.max(-1.2, Math.min(1.2, this.pitch + (e.clientY - lastY) * 0.008));
+      lastX = e.clientX;
+      lastY = e.clientY;
+      if (rerenderCall) eval(rerenderCall);
+    };
+    window.onmouseup = () => { dragging = false; svg.style.cursor = 'grab'; };
+  },
+
+  // Модальне вікно 1D / 2D / 3D карти для будь-якої Книги або Статті
+  openWorkMapModal(workType, workId, viewMode = '3d') {
+    const isBook = workType === 'book';
+    const work = isBook
+      ? (state.books || []).find(b => b.id === workId)
+      : (state.articles || []).find(a => a.id === workId);
+    if (!work) return;
+
+    const user = getCurrentUser();
+    const canEdit = isBook ? canEditBook(work, user) : canEditArticle(work, user);
+    const linkedCodex = isBook ? getBookCodexEntries(work) : getArticleCodexEntries(work);
+    const chapters = isBook ? (work.chapters || []) : [];
+
+    const nodes = [
+      { id: work.id, title: work.title, x: 0, y: 0, z: 0, shapeCode: 'diamond_octahedron', color: '#c5962c', clickable: false }
+    ];
+    const edges = [];
+
+    chapters.forEach((ch, idx) => {
+      const angle = ((2 * Math.PI) / Math.max(1, chapters.length)) * idx;
+      nodes.push({
+        id: ch.id,
+        title: ch.title,
+        x: Math.round(145 * Math.cos(angle)),
+        y: Math.round(145 * Math.sin(angle)),
+        z: -50,
+        shapeCode: 'rect_box',
+        color: '#2b6cb0',
+        clickable: false
+      });
+      edges.push({ from: work.id, to: ch.id, label: `Глава ${idx + 1}` });
+    });
+
+    linkedCodex.forEach((entry, idx) => {
+      const angle = ((2 * Math.PI) / Math.max(1, linkedCodex.length)) * idx + 0.35;
+      nodes.push({
+        id: entry.id,
+        title: entry.title,
+        x: Math.round(165 * Math.cos(angle)),
+        y: Math.round(165 * Math.sin(angle)),
+        z: 65,
+        shapeCode: entry.visual_style?.shape || 'oval_capsule',
+        color: entry.visual_style?.color || '#2e8b57',
+        clickable: true
+      });
+      edges.push({ from: work.id, to: entry.id, label: getDisciplineTitle(entry) });
+    });
+
+    openModal(`
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; padding-right:2rem;">
+        <span class="badge">${isBook ? '📚 Атлас книги' : '📜 Атлас статті'}</span>
+        <div class="tabs" style="margin:0;">
+          <button type="button" class="tab-btn ${viewMode === '1d' ? 'active' : ''}" onclick="UniversalProjectionEngine.openWorkMapModal('${workType}', '${workId}', '1d')">📜 1D Текст</button>
+          <button type="button" class="tab-btn ${viewMode === '2d' ? 'active' : ''}" onclick="UniversalProjectionEngine.openWorkMapModal('${workType}', '${workId}', '2d')">📐 2D Схема</button>
+          <button type="button" class="tab-btn ${viewMode === '3d' ? 'active' : ''}" onclick="UniversalProjectionEngine.openWorkMapModal('${workType}', '${workId}', '3d')">🧊 3D Атлас</button>
+        </div>
+      </div>
+      <h2 style="margin-top:0.5rem;">${escapeHtml(work.title)}</h2>
+      <p class="subtitle">Центр: твір · Нижній рівень (-Z): глави (${chapters.length}) · Верхній рівень (+Z): терміни Кодексу (${linkedCodex.length})</p>
+
+      <div id="workMapCanvasBox" style="margin-top:1rem;"></div>
+
+      ${canEdit ? `
+        <hr style="margin:1.1rem 0; border-color:var(--border);" />
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+          <small class="subtitle">Редагування зв'язків твору з Кодексом:</small>
+          <button type="button" class="btn" style="font-size:0.82rem;" onclick="${isBook ? `openBookEditorModal('${work.id}')` : `openEditArticleModal('${work.id}')`}">✏️ Керувати термінами та главами</button>
+        </div>
+      ` : ''}
+    `);
+
+    const box = document.getElementById('workMapCanvasBox');
+    if (viewMode === '1d') {
+      box.innerHTML = `
+        <div class="timeline-track">
+          ${chapters.map((ch, idx) => `<div class="timeline-step"><strong>📖 Глава ${idx + 1}:</strong> ${escapeHtml(ch.title)}</div>`).join('')}
+          ${linkedCodex.map(e => `
+            <div class="timeline-step" style="border-left-color:#2e8b57; cursor:pointer;" onclick="openCodexNodePreview('${e.id}')">
+              <strong>🏛️ Термін Кодексу:</strong> ${escapeHtml(e.title)} <small class="subtitle">(${escapeHtml(getDisciplineTitle(e))})</small>
+            </div>
+          `).join('')}
+          ${!chapters.length && !linkedCodex.length ? '<p class="subtitle">Поки немає глав чи прив’язаних термінів Кодексу.</p>' : ''}
+        </div>
+      `;
+    } else if (viewMode === '2d') {
+      const w = 660;
+      const h = 380;
+      const cx = 330;
+      const cy = 190;
+      const svgNodes = nodes.map(n => {
+        const px = cx + n.x;
+        const py = cy + n.y;
+        const shape = CodexPrimitives.renderSvgNodeShape({ shapeCode: n.shapeCode, cx: px, cy: py, w: 120, h: 36, stroke: n.color });
+        return `
+          <g ${n.clickable ? `style="cursor:pointer;" onclick="openCodexNodePreview('${n.id}')"` : ''}>
+            ${shape}
+            <text x="${px}" y="${py + 4}" text-anchor="middle" fill="var(--text-main)" font-size="11" font-weight="600">${escapeHtml(n.title.slice(0, 15))}</text>
+          </g>
+        `;
+      }).join('');
+      const svgEdges = edges.map(e => {
+        const n1 = nodes.find(x => x.id === e.from);
+        const n2 = nodes.find(x => x.id === e.to);
+        if (!n1 || !n2) return '';
+        return CodexPrimitives.renderSvgEdge({ x1: cx + n1.x, y1: cy + n1.y, x2: cx + n2.x, y2: cy + n2.y, color: n2.color });
+      }).join('');
+
+      box.innerHTML = `
+        <div class="tree-2d-viewport">
+          <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block; margin:0 auto;">
+            ${svgEdges}
+            ${svgNodes}
+          </svg>
+        </div>
+      `;
+    } else {
+      this.renderInteractive3D({
+        container: box,
+        graph: { nodes, edges },
+        svgId: 'workMap3DSvg',
+        onNodeClickFn: 'openCodexNodePreview',
+        rerenderCall: `UniversalProjectionEngine.openWorkMapModal('${workType}', '${workId}', '3d')`
+      });
+    }
+  }
+};
