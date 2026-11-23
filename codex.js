@@ -127,6 +127,7 @@ function getSubdisciplinesOf(parentId) {
 
 window.selectCodexDiscipline = (discId) => {
   codexFilterState.disciplineId = discId;
+  populateDiagramControls(); if (!document.getElementById('codexDiagramsView')?.classList.contains('hidden')) renderCodexDiagram();
   if (discId === 'all') {
     codexFilterState.enabledSubIds = null;
   } else {
@@ -649,321 +650,412 @@ window.openEditCodexModal = (entryId, returnBookId = null) => {
   };
 };
 
-// --- Візуалізатор діаграм (Дерево, Піраміда/Кола, Хронологія, Мережа зв'язків) ---
-let ringsVisualSubmode = 'orbit'; // 'orbit' (концентричні кола) | 'pyramid' (піраміда)
-let treeVisualSubmode = '2d'; // '2d' (двомірний граф) | '1d' (одномірний список)
+// --- Візуалізатор діаграм (1D/2D Дерево, Перетини коренів, Шкала часу, Кола, Хронологія, Web) ---
+let ringsVisualSubmode = 'orbit';
+let treeVisualSubmode = '2d'; // '2d' | '1d'
+let treeLayoutAxis = 'generation'; // 'generation' | 'timeline_decades'
 let treeHighlightGenerations = true;
 let treeColorBranches = true;
+let compareRootIds = []; // Додаткові корені для порівняння та перетинів
+let secondaryRootsGenMode = 'all_first'; // 'all_first' | 'relative_to_main'
 
 const BRANCH_PALETTE = [
-  '#c5962c', // Золото
-  '#2e8b57', // Смарагд
-  '#2b6cb0', // Сапфір
-  '#805ad5', // Аметист
-  '#c53030', // Рубін
-  '#0d9488', // Бірюза
-  '#d97706'  // Бурштин
+  '#c5962c', '#2e8b57', '#2b6cb0', '#805ad5', '#c53030', '#0d9488', '#d97706'
 ];
 
 const GENERATION_TINTS = [
-  'rgba(197, 150, 44, 0.07)',
-  'rgba(46, 139, 87, 0.07)',
-  'rgba(43, 108, 176, 0.07)',
-  'rgba(128, 90, 213, 0.07)',
-  'rgba(13, 148, 136, 0.07)'
+  'rgba(197, 150, 44, 0.08)',
+  'rgba(46, 139, 87, 0.08)',
+  'rgba(43, 108, 176, 0.08)',
+  'rgba(128, 90, 213, 0.08)',
+  'rgba(13, 148, 136, 0.08)'
 ];
 
-window.setRingsSubmode = (mode) => {
-  ringsVisualSubmode = mode;
+const DECADE_TINTS = [
+  'rgba(59, 130, 246, 0.08)',
+  'rgba(16, 185, 129, 0.08)',
+  'rgba(245, 158, 11, 0.08)',
+  'rgba(168, 85, 247, 0.08)',
+  'rgba(236, 72, 153, 0.08)',
+  'rgba(20, 184, 166, 0.08)'
+];
+
+window.setRingsSubmode = (mode) => { ringsVisualSubmode = mode; renderCodexDiagram(); };
+window.setTreeSubmode = (mode) => { treeVisualSubmode = mode; renderCodexDiagram(); };
+window.setTreeLayoutAxis = (axis) => { treeLayoutAxis = axis; renderCodexDiagram(); };
+window.setSecondaryRootsGenMode = (mode) => { secondaryRootsGenMode = mode; renderCodexDiagram(); };
+window.toggleTreeGenerations = () => { treeHighlightGenerations = !treeHighlightGenerations; renderCodexDiagram(); };
+window.toggleTreeBranchColors = () => { treeColorBranches = !treeColorBranches; renderCodexDiagram(); };
+
+window.removeCompareRoot = (id) => {
+  compareRootIds = compareRootIds.filter(x => x !== id);
+  populateDiagramControls();
   renderCodexDiagram();
 };
 
-window.setTreeSubmode = (mode) => {
-  treeVisualSubmode = mode;
-  renderCodexDiagram();
-};
-
-window.toggleTreeGenerations = () => {
-  treeHighlightGenerations = !treeHighlightGenerations;
-  renderCodexDiagram();
-};
-
-window.toggleTreeBranchColors = () => {
-  treeColorBranches = !treeColorBranches;
-  renderCodexDiagram();
-};
-
-window.openCodexNodePreview = (entryId) => {
-  const entry = (state?.codexEntries || []).find(e => e.id === entryId);
-  if (!entry) return;
-
-  const entries = state.codexEntries || [];
-  const relations = state.codexRelations || [];
-  const parentEntry = entry.parent_entry_id ? entries.find(p => p.id === entry.parent_entry_id) : null;
-  const universeTagsHtml = renderUniverseTags(entry.universe, false);
-
-  const relatedList = relations
-    .filter(r => r.source_id === entry.id || r.target_id === entry.id)
-    .map(r => {
-      const isSource = r.source_id === entry.id;
-      const other = entries.find(e => e.id === (isSource ? r.target_id : r.source_id));
-      if (!other) return '';
-      const arrow = isSource ? '→' : '←';
-      const role = r.role_label ? ` (${escapeHtml(r.role_label)})` : '';
-      const period = r.period_label ? ` · ${escapeHtml(r.period_label)}` : '';
-      return `
-        <div class="chapter-item" style="flex-wrap:wrap;">
-          <span>${arrow} <strong>${escapeHtml(other.title)}</strong><small class="subtitle">${role}${period}</small></span>
-          <button type="button" class="btn" style="padding:0.2rem 0.6rem; font-size:0.8rem;" onclick="openCodexNodePreview('${other.id}')">Відкрити</button>
-        </div>
-      `;
-    })
-    .filter(Boolean)
-    .join('');
-
-  openModal(`
-    <div style="display:flex; gap:0.4rem; flex-wrap:wrap; align-items:center; padding-right:2rem;">
-      ${renderCanonBadge(entry.canon_status)}
-      <span class="badge">${escapeHtml(getDisciplineTitle(entry))}</span>
-    </div>
-    <h2 style="margin-top:0.55rem;">${escapeHtml(entry.title)}</h2>
-
-    ${window.readerReturnContext ? `
-      <div style="margin-bottom:0.75rem;">
-        <button type="button" class="btn btn-primary" style="font-size:0.84rem;" onclick="returnFromCodexPreview()">
-          ← Повернутися до читання
-        </button>
-      </div>
-    ` : ''}
-
-    ${parentEntry ? `
-      <div style="margin-bottom:0.5rem;">
-        <button type="button" class="lineage-pill" onclick="openCodexNodePreview('${parentEntry.id}')">
-          🧬 Базується на: <strong>${escapeHtml(parentEntry.title)}</strong>
-        </button>
-      </div>
-    ` : ''}
-
-    ${universeTagsHtml ? `<div style="display:flex; gap:0.35rem; flex-wrap:wrap; margin-bottom:0.65rem;">${universeTagsHtml}</div>` : ''}
-
-    ${renderEntryAttributes(entry)}
-
-    <div style="white-space:pre-line; margin:0.8rem 0 1.2rem; color:var(--text-main);">${escapeHtml(entry.description)}</div>
-
-    <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1.2rem;">
-      <button type="button" class="btn btn-primary" onclick="closeModal(); openEntryDiagram('${entry.id}')">🌳 Зробити центром діаграми</button>
-      <button type="button" class="btn" onclick="closeModal(); focusCodexEntry('${entry.id}')">📋 Показати в картках</button>
-      <button type="button" class="btn btn-danger" style="padding:0.2rem 0.6rem; font-size:0.8rem;" onclick="deleteWorkshopRelation('${r.id}')">✕</button>
-    </div>
-
-    ${relatedList ? `
-      <hr style="margin:1rem 0; border-color:var(--border);" />
-      <h4>🔗 Пов'язані сутності</h4>
-      <div>${relatedList}</div>
-    ` : ''}
-  `);
-};
-
-window.returnFromCodexPreview = () => {
-  const ctx = window.readerReturnContext;
-  window.readerReturnContext = null;
-  if (!ctx) return closeModal();
-  if (ctx.type === 'chapter') {
-    readChapter(ctx.bookId, ctx.chapterId);
-  } else if (ctx.type === 'article') {
-    openArticle(ctx.articleId);
-  } else {
-    closeModal();
+function getAllowedDisciplineIdsForCurrentFilter() {
+  const discFilter = codexFilterState.disciplineId || 'all';
+  if (discFilter === 'all') return null; // Усі науки
+  const allowed = new Set([discFilter]);
+  if (codexFilterState.includeSubdisciplines) {
+    getSubdisciplinesOf(discFilter).forEach(sub => {
+      if (!codexFilterState.enabledSubIds || codexFilterState.enabledSubIds.has(sub.id)) {
+        allowed.add(sub.id);
+      }
+    });
   }
-};
+  return allowed;
+}
 
-window.openEntryDiagram = (entryId) => {
-  switchCodexMode('diagrams');
-  const rootSelect = document.getElementById('diagramRootSelect');
-  if (rootSelect) rootSelect.value = entryId;
-  renderCodexDiagram();
-};
+function getEntriesScopedByDiscipline() {
+  const entries = state?.codexEntries || [];
+  const allowed = getAllowedDisciplineIdsForCurrentFilter();
+  if (!allowed) return entries;
+  return entries.filter(e => allowed.has(e.discipline_id));
+}
+
+function extractNumericYear(entry, relations = []) {
+  // 1. Шукаємо в атрибутах картки (рік народження, дата заснування тощо)
+  const attrs = entry?.attributes || {};
+  for (const [k, v] of Object.entries(attrs)) {
+    if (/year|birth|date|рік|народж|дата/i.test(k)) {
+      const m = String(v).match(/-?\d{1,5}/);
+      if (m) return Number(m[0]);
+    }
+  }
+  for (const v of Object.values(attrs)) {
+    const m = String(v).match(/\b(-?\d{3,4})\b/);
+    if (m) return Number(m[0]);
+  }
+  // 2. Шукаємо в period_label вхідного зв'язку
+  const inRel = relations.find(r => r.target_id === entry.id && r.period_label);
+  if (inRel) {
+    const m = String(inRel.period_label).match(/-?\d{1,5}/);
+    if (m) return Number(m[0]);
+  }
+  return null;
+}
+
+function getNodeFontClass(entry) {
+  const f = entry?.visual_style?.font || 'default';
+  if (f === 'serif') return 'node-font-serif';
+  if (f === 'mono') return 'node-font-mono';
+  if (f === 'display') return 'node-font-display';
+  return '';
+}
 
 function populateDiagramControls() {
   const rootSelect = document.getElementById('diagramRootSelect');
+  const compareSelect = document.getElementById('diagramCompareSelect');
+  const pillsBox = document.getElementById('diagramComparePills');
   if (!rootSelect || !state) return;
-  const prev = rootSelect.value;
-  const entries = state.codexEntries || [];
-  rootSelect.innerHTML = `<option value="">-- Оберіть кореневу сутність --</option>` +
-    entries.map(e => `<option value="${e.id}">${e.canon_status === 'official' ? '🏛️ ' : '🪶 '}${escapeHtml(e.title)} (${escapeHtml(getDisciplineTitle(e))})</option>`).join('');
-  if (prev) rootSelect.value = prev;
+
+  const scopedEntries = getEntriesScopedByDiscipline();
+  const prevRoot = rootSelect.value;
+
+  const optionsHtml = scopedEntries.map(e =>
+    `<option value="${e.id}">${e.canon_status === 'official' ? '🏛️ ' : '🪶 '}${escapeHtml(e.title)} (${escapeHtml(getDisciplineTitle(e))})</option>`
+  ).join('');
+
+  rootSelect.innerHTML = `<option value="">-- Основна коренева сутність (${scopedEntries.length}) --</option>` + optionsHtml;
+  if (prevRoot && scopedEntries.some(e => e.id === prevRoot)) {
+    rootSelect.value = prevRoot;
+  } else {
+    rootSelect.value = '';
+  }
+
+  // Очищаємо ті compareRootIds, яких немає в поточній науці або які збігаються з основним коренем
+  compareRootIds = compareRootIds.filter(id => id !== rootSelect.value && scopedEntries.some(e => e.id === id));
+
+  if (compareSelect) {
+    const availForCompare = scopedEntries.filter(e => e.id !== rootSelect.value && !compareRootIds.includes(e.id));
+    compareSelect.innerHTML = `<option value="">+ Порівняти з іншим деревом...</option>` +
+      availForCompare.map(e => `<option value="${e.id}">${escapeHtml(e.title)}</option>`).join('');
+  }
+
+  if (pillsBox) {
+    pillsBox.innerHTML = compareRootIds.map(cid => {
+      const ce = scopedEntries.find(x => x.id === cid);
+      if (!ce) return '';
+      return `
+        <span class="badge" style="display:inline-flex; align-items:center; gap:0.35rem; border:1px solid var(--accent);">
+          🌳 Порівняння: <strong>${escapeHtml(ce.title)}</strong>
+          <button type="button" style="background:none; border:none; color:var(--danger); cursor:pointer; font-weight:700;" onclick="removeCompareRoot('${ce.id}')">✕</button>
+        </span>
+      `;
+    }).join('');
+  }
 }
 
-function renderCodexDiagram() {
-  const canvas = document.getElementById('diagramCanvasArea');
-  if (!canvas || !state) return;
+document.getElementById('diagramCompareSelect')?.addEventListener('change', (e) => {
+  const val = e.target.value;
+  if (val && !compareRootIds.includes(val)) {
+    compareRootIds.push(val);
+    populateDiagramControls();
+    renderCodexDiagram();
+  }
+});
 
-  const type = document.getElementById('diagramTypeSelect')?.value || 'tree';
-  const rootId = document.getElementById('diagramRootSelect')?.value || '';
+// Універсальний рендерер 1D/2D дерева (працює і в Кодексі, і в 2D-редакторі Майстерні)
+function buildInteractiveTreeHtml({ canvas, rootIds, isEditable = false }) {
   const entries = state.codexEntries || [];
   const relations = state.codexRelations || [];
+  const mainRootId = rootIds[0];
+  const mainRoot = entries.find(e => e.id === mainRootId);
+  if (!mainRoot) return;
 
-  // 1. Дерево фундаментальних наук
-  if (type === 'disciplines') {
-    const disciplines = getAvailableDisciplines();
-    const renderDiscBranch = (parentId = null) => {
-      const children = disciplines.filter(d => (d.parent_id || null) === parentId);
-      if (!children.length) return '';
-      return children.map(d => {
-        const deps = (d.depends_on || []).map(depId => getDisciplineById(depId)?.title || depId).filter(Boolean);
-        return `
-          <div class="diagram-tree-node">
-            <div class="diagram-node-card is-official">
-              <strong>${escapeHtml(d.title)}</strong>
-              ${deps.length ? `<small class="subtitle">📐 Спирається на: ${escapeHtml(deps.join(', '))}</small>` : ''}
-              <small class="subtitle">Полів схеми: ${(d.schema_fields || []).length}</small>
-            </div>
-            ${renderDiscBranch(d.id)}
-          </div>
-        `;
-      }).join('');
-    };
-    canvas.innerHTML = `<h3>🧬 Ієрархія та наслідування наук порталу</h3>${renderDiscBranch(null)}`;
-    return;
-  }
+  const getChildrenOf = (nodeId) => {
+    const relChildren = relations
+      .filter(r => r.source_id === nodeId && r.diagram_type === 'tree')
+      .map(r => ({ id: r.target_id, label: r.role_label || '', period: r.period_label || '', relId: r.id }));
+    const forkChildren = entries
+      .filter(e => e.parent_entry_id === nodeId)
+      .map(e => ({ id: e.id, label: 'Варіація', period: '', relId: null }));
+    return deduplicateList([...relChildren, ...forkChildren], c => c.id);
+  };
 
-  if (!rootId) {
-    canvas.innerHTML = '<p class="subtitle">Оберіть кореневу сутність у списку вище (або натисніть 🌳 на будь-якій картці Кодексу), щоб побудувати діаграму.</p>';
-    return;
-  }
+  // Будуємо вузли та зв'язки з підтримкою перетину кількох коренів
+  const nodeMap = new Map(); // id -> { node, depth, branchIdx, parents: [], children: [], year }
+  const edgesList = [];
 
-  const rootEntry = entries.find(e => e.id === rootId);
-  if (!rootEntry) return;
-
-  // 2. Дерево (1D Список або 2D Граф із поколіннями та кольорами гілок)
-  if (type === 'tree') {
-    const getChildrenOf = (nodeId) => {
-      const relChildren = relations
-        .filter(r => r.source_id === nodeId && r.diagram_type === 'tree')
-        .map(r => ({ id: r.target_id, label: r.role_label || '' }));
-      const forkChildren = entries
-        .filter(e => e.parent_entry_id === nodeId)
-        .map(e => ({ id: e.id, label: 'Варіація' }));
-      return deduplicateList([...relChildren, ...forkChildren], c => c.id);
-    };
-
-    const visited = new Set();
-    const buildModel = (nodeId, depth = 0, branchIdx = null, roleLabel = '') => {
-      if (visited.has(nodeId)) return null;
-      visited.add(nodeId);
+  const traverseRoot = (rId, rootOrderIdx, initialDepth = 0) => {
+    const visitedLocal = new Set();
+    const walk = (nodeId, depth, branchIdx, parentId = null, roleLabel = '', period = '') => {
       const node = entries.find(e => e.id === nodeId);
-      if (!node) return null;
+      if (!node) return;
 
-      const rawChildren = getChildrenOf(nodeId);
-      const children = rawChildren
-        .map((ch, idx) => {
-          const nextBranch = depth === 0 ? idx : branchIdx;
-          return buildModel(ch.id, depth + 1, nextBranch, ch.label);
-        })
-        .filter(Boolean);
+      if (!nodeMap.has(nodeId)) {
+        nodeMap.set(nodeId, {
+          node,
+          depth,
+          branchIdx,
+          rootOrderIdx,
+          childrenIds: [],
+          year: extractNumericYear(node, relations)
+        });
+      } else {
+        const existing = nodeMap.get(nodeId);
+        // Якщо вузол уже є (перетин!), беремо максимальну глибину покоління
+        if (depth > existing.depth) existing.depth = depth;
+      }
 
-      return { node, depth, branchIdx, roleLabel, children };
+      if (parentId) {
+        const edgeKey = `${parentId}->${nodeId}`;
+        if (!edgesList.some(e => e.key === edgeKey)) {
+          edgesList.push({ key: edgeKey, fromId: parentId, toId: nodeId, roleLabel, period, branchIdx });
+        }
+        const pObj = nodeMap.get(parentId);
+        if (pObj && !pObj.childrenIds.includes(nodeId)) {
+          pObj.childrenIds.push(nodeId);
+        }
+      }
+
+      if (visitedLocal.has(nodeId)) return;
+      visitedLocal.add(nodeId);
+
+      const kids = getChildrenOf(nodeId);
+      kids.forEach((ch, idx) => {
+        const nextBranch = parentId === null ? (rootOrderIdx * 3 + idx) : branchIdx;
+        walk(ch.id, depth + 1, nextBranch, nodeId, ch.label, ch.period);
+      });
     };
+    walk(rId, initialDepth, rootOrderIdx * 3, null, '', '');
+  };
 
-    const treeModel = buildModel(rootId, 0, null, '');
-    if (!treeModel) return;
+  // Спочатку обходимо основний корінь
+  traverseRoot(mainRootId, 0, 0);
 
-    const getBranchColor = (branchIdx) => {
-      if (!treeColorBranches || branchIdx === null || branchIdx === undefined) return 'var(--accent)';
-      return BRANCH_PALETTE[branchIdx % BRANCH_PALETTE.length];
-    };
+  // Потім додаткові корені (з урахуванням налаштування поколінь при перетині)
+  rootIds.slice(1).forEach((secId, idx) => {
+    let startDepth = 0;
+    if (secondaryRootsGenMode === 'relative_to_main') {
+      // Шукаємо спільного нащадка, щоб вирівняти покоління відносно основного дерева
+      const secKids = getChildrenOf(secId);
+      const sharedKid = secKids.map(k => nodeMap.get(k.id)).find(Boolean);
+      if (sharedKid) {
+        startDepth = Math.max(0, sharedKid.depth - 1);
+      }
+    }
+    traverseRoot(secId, idx + 1, startDepth);
+  });
 
-    const getGenBg = (depth) => {
-      if (!treeHighlightGenerations) return 'transparent';
-      return GENERATION_TINTS[depth % GENERATION_TINTS.length];
-    };
+  const getBranchColor = (branchIdx, customColor = '') => {
+    if (customColor) return customColor;
+    if (!treeColorBranches || branchIdx === null || branchIdx === undefined) return 'var(--accent)';
+    return BRANCH_PALETTE[branchIdx % BRANCH_PALETTE.length];
+  };
 
-    const toolbarHtml = `
-      <div class="tree-controls-bar">
-        <div>
-          <h3 style="margin:0;">🌳 Дерево: ${escapeHtml(rootEntry.title)}</h3>
-          <small class="subtitle">Клікніть по вузлу для відкриття досьє</small>
-        </div>
-        <div class="tree-toggles">
+  const getGenColor = (depth) => BRANCH_PALETTE[depth % BRANCH_PALETTE.length];
+
+  const getGenBg = (depth) => {
+    if (!treeHighlightGenerations) return 'transparent';
+    return GENERATION_TINTS[depth % GENERATION_TINTS.length];
+  };
+
+  const hasSecondaryRoots = rootIds.length > 1;
+
+  const toolbarHtml = `
+    <div class="tree-controls-bar">
+      <div>
+        <h3 style="margin:0;">${isEditable ? '🛠️ 2D Конструктор дерева:' : '🌳 Дерево:'} ${escapeHtml(mainRoot.title)}${hasSecondaryRoots ? ` (+${rootIds.length - 1})` : ''}</h3>
+        <small class="subtitle">${isEditable ? 'Натискайте + (додати нащадка), ✏️ (стиль та батьки) або ✕ на картках' : 'Клікніть по вузлу для досьє'}</small>
+      </div>
+      <div class="tree-toggles">
+        ${!isEditable ? `
           <div class="tabs" style="margin:0;">
             <button type="button" class="tab-btn ${treeVisualSubmode === '2d' ? 'active' : ''}" onclick="setTreeSubmode('2d')">🕸️ 2D Граф</button>
             <button type="button" class="tab-btn ${treeVisualSubmode === '1d' ? 'active' : ''}" onclick="setTreeSubmode('1d')">📋 1D Список</button>
           </div>
-          <button type="button" class="btn ${treeHighlightGenerations ? 'btn-primary' : ''}" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="toggleTreeGenerations()">
-            🏛️ Покоління
-          </button>
-          <button type="button" class="btn ${treeColorBranches ? 'btn-primary' : ''}" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="toggleTreeBranchColors()">
-            🌈 Кольори гілок
-          </button>
-        </div>
-      </div>
-    `;
-
-    // --- Варіант А: 1D Одномірний список ---
-    if (treeVisualSubmode === '1d') {
-      const render1D = (item) => {
-        const bColor = getBranchColor(item.branchIdx);
-        const gBg = getGenBg(item.depth);
-        return `
-          <div class="diagram-tree-node tree-1d-gen-bg" style="border-left: 3px solid ${bColor}; background:${gBg};">
-            <div class="diagram-node-card" style="cursor:pointer; border-left: 4px solid ${bColor};" onclick="openCodexNodePreview('${item.node.id}')">
-              <div style="display:flex; gap:0.35rem; align-items:center; flex-wrap:wrap;">
-                ${treeHighlightGenerations ? `<span class="gen-badge">Покоління ${item.depth + 1}</span>` : ''}
-                ${item.roleLabel ? `<span class="badge" style="color:${bColor};">${escapeHtml(item.roleLabel)}</span>` : ''}
-              </div>
-              <div style="display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap; margin-top:0.2rem;">
-                <strong>${escapeHtml(item.node.title)}</strong>
-                ${renderCanonBadge(item.node.canon_status)}
-              </div>
-              <small class="subtitle">${escapeHtml(getDisciplineTitle(item.node))}</small>
-            </div>
-            ${item.children.map(ch => render1D(ch)).join('')}
+        ` : ''}
+        ${treeVisualSubmode === '2d' || isEditable ? `
+          <div class="tabs" style="margin:0;">
+            <button type="button" class="tab-btn ${treeLayoutAxis === 'generation' ? 'active' : ''}" onclick="setTreeLayoutAxis('generation')">🏛️ За поколіннями</button>
+            <button type="button" class="tab-btn ${treeLayoutAxis === 'timeline_decades' ? 'active' : ''}" onclick="setTreeLayoutAxis('timeline_decades')">⏳ Шкала часу (Декади)</button>
           </div>
-        `;
-      };
+        ` : ''}
+        <button type="button" class="btn ${treeHighlightGenerations ? 'btn-primary' : ''}" style="padding:0.32rem 0.7rem; font-size:0.78rem;" onclick="toggleTreeGenerations()">
+          🎨 Підсвітка
+        </button>
+        <button type="button" class="btn ${treeColorBranches ? 'btn-primary' : ''}" style="padding:0.32rem 0.7rem; font-size:0.78rem;" onclick="toggleTreeBranchColors()">
+          🌈 Гілки
+        </button>
+      </div>
+    </div>
+    ${hasSecondaryRoots ? `
+      <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap; margin-bottom:0.85rem; padding:0.55rem 0.8rem; background:var(--bg-subtle); border-radius:10px;">
+        <small class="subtitle"><strong>Покоління додаткових коренів:</strong></small>
+        <button type="button" class="btn ${secondaryRootsGenMode === 'all_first' ? 'btn-primary' : ''}" style="padding:0.22rem 0.6rem; font-size:0.78rem;" onclick="setSecondaryRootsGenMode('all_first')">👑 Усі корені — 1-ше покоління</button>
+        <button type="button" class="btn ${secondaryRootsGenMode === 'relative_to_main' ? 'btn-primary' : ''}" style="padding:0.22rem 0.6rem; font-size:0.78rem;" onclick="setSecondaryRootsGenMode('relative_to_main')">🔗 Рахувати від основного дерева</button>
+      </div>
+    ` : ''}
+  `;
 
-      canvas.innerHTML = `${toolbarHtml}${render1D(treeModel)}`;
-      return;
+  // --- 1D Режим ---
+  if (!isEditable && treeVisualSubmode === '1d') {
+    const rendered1D = new Set();
+    const render1DNode = (nodeId, roleLabel = '') => {
+      const item = nodeMap.get(nodeId);
+      if (!item) return '';
+      const isDuplicateRef = rendered1D.has(nodeId);
+      rendered1D.add(nodeId);
+
+      const customColor = item.node.visual_style?.color || '';
+      const bColor = getBranchColor(item.branchIdx, customColor);
+      const gBg = getGenBg(item.depth);
+      const fontCls = getNodeFontClass(item.node);
+
+      return `
+        <div class="diagram-tree-node tree-1d-gen-bg" style="border-left: 3px solid ${bColor}; background:${gBg};">
+          <div class="diagram-node-card ${fontCls}" style="cursor:pointer; border-left: 4px solid ${bColor};" onclick="openCodexNodePreview('${item.node.id}')">
+            <div style="display:flex; gap:0.35rem; align-items:center; flex-wrap:wrap;">
+              ${treeHighlightGenerations ? `<span class="gen-badge">Покоління ${item.depth + 1}</span>` : ''}
+              ${item.year !== null ? `<span class="badge">📅 ${item.year}</span>` : ''}
+              ${roleLabel ? `<span class="badge" style="color:${bColor};">${escapeHtml(roleLabel)}</span>` : ''}
+              ${isDuplicateRef ? `<span class="badge">🔗 Перетин ліній</span>` : ''}
+            </div>
+            <div style="display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap; margin-top:0.2rem;">
+              <strong>${escapeHtml(item.node.title)}</strong>
+              ${renderCanonBadge(item.node.canon_status)}
+            </div>
+            <small class="subtitle">${escapeHtml(getDisciplineTitle(item.node))}</small>
+          </div>
+          ${!isDuplicateRef ? item.childrenIds.map(cid => {
+            const edge = edgesList.find(e => e.fromId === nodeId && e.toId === cid);
+            return render1DNode(cid, edge?.roleLabel || '');
+          }).join('') : ''}
+        </div>
+      `;
+    };
+
+    canvas.innerHTML = `${toolbarHtml}${rootIds.map(rId => render1DNode(rId)).join('')}`;
+    return;
+  }
+
+  // --- 2D Граф (За поколіннями або за Шкалою часу з декадами) ---
+  const NODE_SLOT_W = 210;
+  const LEVEL_H = 148;
+  const placedForWidth = new Set();
+
+  const measureSpan = (nodeId) => {
+    const item = nodeMap.get(nodeId);
+    if (!item || placedForWidth.has(nodeId)) return 0.5;
+    placedForWidth.add(nodeId);
+    const activeKids = item.childrenIds.filter(cid => !placedForWidth.has(cid));
+    if (!activeKids.length) {
+      item.leafSpan = 1;
+      return 1;
     }
+    item.leafSpan = activeKids.reduce((sum, cid) => sum + measureSpan(cid), 0);
+    return item.leafSpan;
+  };
 
-    // --- Варіант Б: 2D Двомірний граф (розгалуження в різні боки + SVG-зв'язки) ---
-    const NODE_SLOT_W = 205;
-    const LEVEL_H = 148;
-    let maxDepth = 0;
+  let totalLeaves = 0;
+  rootIds.forEach(rId => { totalLeaves += measureSpan(rId); });
+  totalLeaves = Math.max(1, totalLeaves);
 
-    const measureLeaves = (item) => {
-      if (item.depth > maxDepth) maxDepth = item.depth;
-      if (!item.children.length) {
-        item.leafSpan = 1;
-        return 1;
+  const positioned = new Set();
+  const assignX = (nodeId, leftSlot) => {
+    const item = nodeMap.get(nodeId);
+    if (!item || positioned.has(nodeId)) return;
+    positioned.add(nodeId);
+
+    item.x = Math.round((leftSlot + (item.leafSpan || 1) / 2) * NODE_SLOT_W + 40);
+    let cursor = leftSlot;
+    item.childrenIds.forEach(cid => {
+      if (!positioned.has(cid)) {
+        const cItem = nodeMap.get(cid);
+        assignX(cid, cursor);
+        cursor += (cItem?.leafSpan || 1);
       }
-      item.leafSpan = item.children.reduce((sum, ch) => sum + measureLeaves(ch), 0);
-      return item.leafSpan;
-    };
-    const totalLeaves = measureLeaves(treeModel);
+    });
+  };
 
-    const flatNodes = [];
-    const flatEdges = [];
+  let rootCursor = 0;
+  rootIds.forEach(rId => {
+    const rItem = nodeMap.get(rId);
+    assignX(rId, rootCursor);
+    rootCursor += (rItem?.leafSpan || 1);
+  });
 
-    const layoutNodes = (item, leftSlot) => {
-      const centerSlot = leftSlot + item.leafSpan / 2;
-      item.x = Math.round(centerSlot * NODE_SLOT_W + 40);
-      item.y = item.depth * LEVEL_H + 28;
-      flatNodes.push(item);
+  const allItems = [...nodeMap.values()];
+  let bandsHtml = '';
+  let stageHeight = 400;
 
-      let cursor = leftSlot;
-      item.children.forEach(ch => {
-        layoutNodes(ch, cursor);
-        flatEdges.push({ from: item, to: ch });
-        cursor += ch.leafSpan;
-      });
-    };
-    layoutNodes(treeModel, 0);
+  if (treeLayoutAxis === 'timeline_decades') {
+    // Режим 4: Шкала часу з декадами на фоні, а покоління — кольором рамки картки
+    const years = allItems.map(i => i.year).filter(y => y !== null);
+    const minYear = years.length ? Math.min(...years) : 800;
+    const maxYear = years.length ? Math.max(...years) : minYear + 30;
+    const startDecade = Math.floor(minYear / 10) * 10;
+    const endDecade = Math.floor(maxYear / 10) * 10;
+    const decadesCount = Math.max(1, Math.floor((endDecade - startDecade) / 10) + 1);
 
-    const stageWidth = Math.max(640, totalLeaves * NODE_SLOT_W + 80);
-    const stageHeight = (maxDepth + 1) * LEVEL_H + 30;
+    bandsHtml = Array.from({ length: decadesCount }, (_, idx) => {
+      const decStart = startDecade + idx * 10;
+      const top = idx * LEVEL_H;
+      const bg = treeHighlightGenerations ? DECADE_TINTS[idx % DECADE_TINTS.length] : 'transparent';
+      return `
+        <div class="tree-2d-gen-band" style="top:${top}px; height:${LEVEL_H}px; background:${bg};">
+          <span class="time-band-label">⏳ ${decStart}–${decStart + 9} рр.</span>
+        </div>
+      `;
+    }).join('');
 
-    const genBandsHtml = Array.from({ length: maxDepth + 1 }, (_, d) => {
+    allItems.forEach(item => {
+      if (item.year !== null) {
+        const decIdx = Math.floor((item.year - startDecade) / 10);
+        const offsetInDecade = ((item.year - startDecade) % 10) / 10;
+        item.y = Math.round(decIdx * LEVEL_H + 24 + offsetInDecade * 48);
+      } else {
+        item.y = Math.min(decadesCount - 1, item.depth) * LEVEL_H + 34;
+      }
+    });
+
+    stageHeight = decadesCount * LEVEL_H + 40;
+  } else {
+    // Класичний режим за поколіннями
+    const maxDepth = Math.max(0, ...allItems.map(i => i.depth));
+    bandsHtml = Array.from({ length: maxDepth + 1 }, (_, d) => {
       const top = d * LEVEL_H;
       const bg = getGenBg(d);
       return `
@@ -973,449 +1065,347 @@ function renderCodexDiagram() {
       `;
     }).join('');
 
-    const svgPathsHtml = flatEdges.map(({ from, to }) => {
-      const x1 = from.x;
-      const y1 = from.y + 68;
-      const x2 = to.x;
-      const y2 = to.y;
-      const midY = Math.round((y1 + y2) / 2);
-      const color = getBranchColor(to.branchIdx);
-      return `<path d="M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}" fill="none" stroke="${color}" stroke-width="2.4" stroke-opacity="0.85" />`;
+    allItems.forEach(item => {
+      item.y = item.depth * LEVEL_H + 28;
+    });
+
+    stageHeight = (maxDepth + 1) * LEVEL_H + 40;
+  }
+
+  const stageWidth = Math.max(660, totalLeaves * NODE_SLOT_W + 80);
+
+  const svgPathsHtml = edgesList.map(edge => {
+    const from = nodeMap.get(edge.fromId);
+    const to = nodeMap.get(edge.toId);
+    if (!from || !to) return '';
+    const x1 = from.x;
+    const y1 = from.y + 58;
+    const x2 = to.x;
+    const y2 = to.y;
+    const midY = Math.round((y1 + y2) / 2);
+    const color = getBranchColor(edge.branchIdx, to.node.visual_style?.color);
+    return `<path d="M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}" fill="none" stroke="${color}" stroke-width="2.4" stroke-opacity="0.88" />`;
+  }).join('');
+
+  const edgeTagsHtml = edgesList
+    .filter(e => e.roleLabel)
+    .map(edge => {
+      const from = nodeMap.get(edge.fromId);
+      const to = nodeMap.get(edge.toId);
+      if (!from || !to) return '';
+      const midX = Math.round((from.x + to.x) / 2);
+      const midY = Math.round((from.y + 58 + to.y) / 2);
+      const color = getBranchColor(edge.branchIdx, to.node.visual_style?.color);
+      return `<span class="tree-2d-edge-tag" style="left:${midX}px; top:${midY}px; border-color:${color}; color:${color};">${escapeHtml(edge.roleLabel)}</span>`;
     }).join('');
 
-    const edgeTagsHtml = flatEdges
-      .filter(e => e.to.roleLabel)
-      .map(({ from, to }) => {
-        const midX = Math.round((from.x + to.x) / 2);
-        const midY = Math.round((from.y + 68 + to.y) / 2);
-        const color = getBranchColor(to.branchIdx);
-        return `<span class="tree-2d-edge-tag" style="left:${midX}px; top:${midY}px; border-color:${color}; color:${color};">${escapeHtml(to.roleLabel)}</span>`;
-      }).join('');
+  const nodes2DHtml = allItems.map(item => {
+    const customColor = item.node.visual_style?.color || '';
+    const branchColor = getBranchColor(item.branchIdx, customColor);
+    const genColor = getGenColor(item.depth);
+    const fontCls = getNodeFontClass(item.node);
 
-    const nodes2DHtml = flatNodes.map(item => {
-      const color = getBranchColor(item.branchIdx);
-      return `
-        <button type="button" class="tree-2d-node" style="left:${item.x}px; top:${item.y}px; border-top: 4px solid ${color};"
-          onclick="openCodexNodePreview('${item.node.id}')" title="Відкрити досьє: ${escapeHtml(item.node.title)}">
-          <div style="display:flex; justify-content:space-between; align-items:center; gap:0.25rem;">
-            <strong style="font-size:0.86rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(item.node.title)}</strong>
-            ${item.node.canon_status === 'official' ? '<span>🏛️</span>' : ''}
-          </div>
-          <small class="subtitle" style="display:block; font-size:0.74rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:0.15rem;">
-            ${escapeHtml(getDisciplineTitle(item.node))}
-          </small>
-        </button>
-      `;
-    }).join('');
+    // У режимі шкали часу рамка картки підсвічує покоління!
+    const borderStyle = treeLayoutAxis === 'timeline_decades'
+      ? `border: 2.5px solid ${customColor || genColor};`
+      : `border-top: 4px solid ${branchColor};`;
 
-    canvas.innerHTML = `
-      ${toolbarHtml}
-      <div class="tree-2d-viewport">
-        <div class="tree-2d-stage" style="width:${stageWidth}px; height:${stageHeight}px;">
-          ${genBandsHtml}
-          <svg class="tree-2d-svg" viewBox="0 0 ${stageWidth} ${stageHeight}">${svgPathsHtml}</svg>
-          ${edgeTagsHtml}
-          ${nodes2DHtml}
-        </div>
-      </div>
-    `;
-    return;
-  }
-
-  // 3. Концентричні кола / Соціальна піраміда (гільдії, ордени, держави)
-  if (type === 'rings') {
-    const orgRels = relations.filter(r => r.source_id === rootId && r.diagram_type === 'rings');
-    if (!orgRels.length) {
-      canvas.innerHTML = `<p class="subtitle">Для «${escapeHtml(rootEntry.title)}» ще не додано рівнів організації. Додайте зв'язки типу «Кола / Піраміда» у Майстерні.</p>`;
-      return;
-    }
-
-    const tiers = {};
-    orgRels.forEach(r => {
-      const lvl = Number(r.tier_level) || 1;
-      if (!tiers[lvl]) tiers[lvl] = [];
-      tiers[lvl].push(r);
-    });
-    const sortedLevels = Object.keys(tiers).map(Number).sort((a, b) => a - b);
-
-    const switcherHtml = `
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.6rem; margin-bottom:1rem;">
-        <div>
-          <h3 style="margin:0;">🎯 Структура: ${escapeHtml(rootEntry.title)}</h3>
-          <small class="subtitle">Від внутрішнього ядра (Рівень 1) до зовнішнього кола клієнтів і союзників</small>
-        </div>
-        <div class="tabs" style="margin:0;">
-          <button type="button" class="tab-btn ${ringsVisualSubmode === 'orbit' ? 'active' : ''}" onclick="setRingsSubmode('orbit')">⭕ Кола</button>
-          <button type="button" class="tab-btn ${ringsVisualSubmode === 'pyramid' ? 'active' : ''}" onclick="setRingsSubmode('pyramid')">🔺 Піраміда</button>
-        </div>
-      </div>
-    `;
-
-    if (ringsVisualSubmode === 'orbit') {
-      const ringCount = sortedLevels.length;
-      const minRadius = 95;
-      const maxRadius = 230;
-      const step = ringCount > 1 ? (maxRadius - minRadius) / (ringCount - 1) : 0;
-
-      const circlesSvg = sortedLevels.map((_, idx) => {
-        const r = minRadius + idx * step;
-        return `<circle cx="270" cy="270" r="${r}" class="orbit-ring-circle" />`;
-      }).join('');
-
-      const nodesHtml = sortedLevels.map((lvl, idx) => {
-        const r = minRadius + idx * step;
-        const members = tiers[lvl];
-        return members.map((rel, mIdx) => {
-          const member = entries.find(e => e.id === rel.target_id);
-          if (!member) return '';
-          const angle = ((2 * Math.PI) / members.length) * mIdx - Math.PI / 2 + idx * 0.45;
-          const leftPct = ((270 + r * Math.cos(angle)) / 540) * 100;
-          const topPct = ((270 + r * Math.sin(angle)) / 540) * 100;
-          const label = rel.role_label ? `${member.title} · ${rel.role_label}` : member.title;
-          return `
-            <button type="button" class="orbit-node-btn" style="left:${leftPct.toFixed(1)}%; top:${topPct.toFixed(1)}%;"
-              onclick="openCodexNodePreview('${member.id}')" title="Рівень ${lvl}: ${escapeHtml(label)}">
-              ${escapeHtml(member.title)}
-            </button>
-          `;
-        }).join('');
-      }).join('');
-
-      const legendHtml = sortedLevels.map(lvl => {
-        const tierLabel = tiers[lvl][0]?.role_label || `Рівень ${lvl}`;
-        return `<span class="badge">Кільце ${lvl}: ${escapeHtml(tierLabel)} (${tiers[lvl].length})</span>`;
-      }).join('');
-
-      canvas.innerHTML = `
-        ${switcherHtml}
-        <div class="orbit-view-wrap">
-          <div style="display:flex; gap:0.4rem; flex-wrap:wrap; justify-content:center;">${legendHtml}</div>
-          <div class="orbit-svg-box">
-            <svg viewBox="0 0 540 540">${circlesSvg}</svg>
-            <button type="button" class="orbit-center-pill" onclick="openCodexNodePreview('${rootEntry.id}')">${escapeHtml(rootEntry.title)}</button>
-            ${nodesHtml}
-          </div>
-        </div>
-      `;
-      return;
-    }
-
-    canvas.innerHTML = `
-      ${switcherHtml}
-      ${sortedLevels.map((lvl, idx) => {
-        const widthPct = Math.min(100, 48 + idx * 14);
-        const tierLabel = tiers[lvl][0]?.role_label || `Рівень ${lvl}`;
-        return `
-          <div class="pyramid-tier" style="max-width:${widthPct}%;">
-            <div class="pyramid-tier-header">Рівень ${lvl} · ${escapeHtml(tierLabel)}</div>
-            <div class="pyramid-members">
-              ${tiers[lvl].map(r => {
-                const member = entries.find(e => e.id === r.target_id);
-                return member
-                  ? `<button type="button" class="btn" onclick="openCodexNodePreview('${member.id}')">${escapeHtml(member.title)}${r.role_label ? ` (${escapeHtml(r.role_label)})` : ''}</button>`
-                  : '';
-              }).join('')}
-            </div>
-          </div>
-        `;
-      }).join('')}
-    `;
-    return;
-  }
-
-  // 4. Хронологія володіння (артефакти, локації, династії)
-  if (type === 'timeline') {
-    const timeRels = relations
-      .filter(r => r.source_id === rootId && r.diagram_type === 'timeline')
-      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-
-    if (!timeRels.length) {
-      canvas.innerHTML = `<p class="subtitle">Для «${escapeHtml(rootEntry.title)}» ще не зафіксовано хронології. Додайте зв'язки типу «Хронологія» у Майстерні.</p>`;
-      return;
-    }
-
-    canvas.innerHTML = `
-      <h3>⏳ Хронологія володіння / історії: ${escapeHtml(rootEntry.title)}</h3>
-      <div class="timeline-track" style="margin-top:1rem;">
-        ${timeRels.map(r => {
-          const holder = entries.find(e => e.id === r.target_id);
-          return `
-            <div class="timeline-step" style="${holder ? 'cursor:pointer;' : ''}" ${holder ? `onclick="openCodexNodePreview('${holder.id}')"` : ''}>
-              ${r.period_label ? `<span class="badge">${escapeHtml(r.period_label)}</span>` : ''}
-              <div style="margin-top:0.35rem;">
-                <strong>${holder ? escapeHtml(holder.title) : 'Невідомий власник'}</strong>
-                ${r.role_label ? ` — <span class="subtitle">${escapeHtml(r.role_label)}</span>` : ''}
-              </div>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    `;
-    return;
-  }
-
-  // 5. Мережа зв'язків 360° (Web: усі вхідні та вихідні грані навколо сутності)
-  if (type === 'web') {
-    const incoming = [];
-    const outgoing = [];
-
-    if (rootEntry.parent_entry_id) {
-      const proto = entries.find(e => e.id === rootEntry.parent_entry_id);
-      if (proto) incoming.push({ entry: proto, label: '🧬 Взято за основу', period: '' });
-    }
-    entries.filter(e => e.parent_entry_id === rootId).forEach(fork => {
-      outgoing.push({ entry: fork, label: '🌿 Варіація у світі', period: '' });
-    });
-
-    relations.forEach(r => {
-      if (r.target_id === rootId) {
-        const src = entries.find(e => e.id === r.source_id);
-        if (src) incoming.push({ entry: src, label: r.role_label || r.diagram_type, period: r.period_label });
-      }
-      if (r.source_id === rootId) {
-        const tgt = entries.find(e => e.id === r.target_id);
-        if (tgt) outgoing.push({ entry: tgt, label: r.role_label || r.diagram_type, period: r.period_label });
-      }
-    });
-
-    const renderEdgeCard = (item, direction) => `
-      <div class="web-edge-card" onclick="openCodexNodePreview('${item.entry.id}')">
-        <div style="display:flex; justify-content:space-between; gap:0.4rem; align-items:center; flex-wrap:wrap;">
-          <span class="badge">${direction} ${escapeHtml(item.label)}</span>
-          ${item.period ? `<small class="subtitle">${escapeHtml(item.period)}</small>` : ''}
-        </div>
-        <strong style="display:block; margin-top:0.35rem;">${escapeHtml(item.entry.title)}</strong>
-        <small class="subtitle">${escapeHtml(getDisciplineTitle(item.entry))}</small>
-      </div>
-    `;
-
-    canvas.innerHTML = `
-      <h3>🕸️ Мережа зв'язків навколо: ${escapeHtml(rootEntry.title)}</h3>
-      <p class="subtitle">Усі вхідні джерела (зліва) та вихідні зв'язки (справа)</p>
-      <div class="web-graph-grid">
-        <div class="web-column">
-          ${incoming.length
-            ? incoming.map(i => renderEdgeCard(i, '←')).join('')
-            : '<p class="subtitle" style="text-align:center;">Вхідних зв’язків немає</p>'}
-        </div>
-
-        <div class="web-hub-card" style="cursor:pointer;" onclick="openCodexNodePreview('${rootEntry.id}')">
-          ${renderCanonBadge(rootEntry.canon_status)}
-          <h3 style="margin:0.4rem 0 0.2rem;">${escapeHtml(rootEntry.title)}</h3>
-          <small class="subtitle">${escapeHtml(getDisciplineTitle(rootEntry))}</small>
-        </div>
-
-        <div class="web-column">
-          ${outgoing.length
-            ? outgoing.map(o => renderEdgeCard(o, '→')).join('')
-            : '<p class="subtitle" style="text-align:center;">Вихідних зв’язків немає</p>'}
-        </div>
-      </div>
-    `;
-  }
-}
-
-document.getElementById('diagramTypeSelect')?.addEventListener('change', renderCodexDiagram);
-document.getElementById('diagramRootSelect')?.addEventListener('change', renderCodexDiagram);
-
-// --- Майстерня: вкладка Кодексу та зв'язків ---
-function renderWorkshopDynamicFields() {
-  const container = document.getElementById('wsCodexDynamicFields');
-  const discId = document.getElementById('wsCodexDiscipline')?.value;
-  if (!container) return;
-
-  const disc = getDisciplineById(discId);
-  const fields = (Array.isArray(disc?.schema_fields) ? disc.schema_fields : []).filter(f => !f.hidden);
-
-  if (!fields.length) {
-    container.classList.add('hidden');
-    container.innerHTML = '';
-    return;
-  }
-
-  container.classList.remove('hidden');
-  container.innerHTML = `
-    <strong style="font-size:0.86rem; color:var(--accent);">📐 Параметри науки «${escapeHtml(disc.title)}»</strong>
-    ${fields.map(f => f.type === 'textarea'
-      ? `<textarea class="input textarea ws-dynamic-attr" data-attr-key="${escapeHtml(f.key)}" rows="2" placeholder="${escapeHtml(f.label)}"></textarea>`
-      : `<input type="text" class="input ws-dynamic-attr" data-attr-key="${escapeHtml(f.key)}" placeholder="${escapeHtml(f.label)}" />`
-    ).join('')}
-  `;
-}
-
-function initWorkshopCodex() {
-  const discSelect = document.getElementById('wsCodexDiscipline');
-  const parentSelect = document.getElementById('wsCodexParentEntry');
-  const srcSelect = document.getElementById('wsRelSource');
-  const tgtSelect = document.getElementById('wsRelTarget');
-
-  const disciplines = getAvailableDisciplines();
-  const entries = state?.codexEntries || [];
-
-  if (discSelect) {
-    const prevDisc = discSelect.value;
-    discSelect.innerHTML = disciplines.map(d =>
-      `<option value="${escapeHtml(d.id)}">${d.parent_id ? '↳ ' : ''}${escapeHtml(d.title)}</option>`
-    ).join('');
-    discSelect.value = (prevDisc && disciplines.some(d => d.id === prevDisc))
-      ? prevDisc
-      : disciplines[0].id;
-    renderWorkshopDynamicFields();
-  }
-
-  const entryOptionsHtml = entries.map(e =>
-    `<option value="${e.id}">${e.canon_status === 'official' ? '🏛️ ' : '🪶 '}${escapeHtml(e.title)} (${escapeHtml(getDisciplineTitle(e))})</option>`
-  ).join('');
-
-  if (parentSelect) {
-    parentSelect.innerHTML = `<option value="">🧬 Взято за основу (необов'язково)</option>` + entryOptionsHtml;
-  }
-  if (srcSelect) {
-    srcSelect.innerHTML = `<option value="">-- Сутність А (Предок / Гільдія / Артефакт) --</option>` + entryOptionsHtml;
-  }
-  if (tgtSelect) {
-    tgtSelect.innerHTML = `<option value="">-- Сутність Б (Нащадок / Учасник / Власник) --</option>` + entryOptionsHtml;
-  }
-
-  renderWorkshopRelationsList();
-}
-
-document.getElementById('wsCodexDiscipline')?.addEventListener('change', renderWorkshopDynamicFields);
-
-document.getElementById('workshopCodexForm')?.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  if (!getCurrentUser()) return openAuthModal();
-
-  const attributes = {};
-  document.querySelectorAll('#wsCodexDynamicFields .ws-dynamic-attr').forEach(el => {
-    const k = el.dataset.attrKey;
-    const v = el.value.trim();
-    if (k && v) attributes[k] = v;
-  });
-
-  const cleanUniverse = parseUniverseTags(document.getElementById('wsCodexUniverse').value).join(', ');
-  const disciplineId = document.getElementById('wsCodexDiscipline').value;
-
-  try {
-    await TaliesinAPI.createCodexEntry({
-      title: document.getElementById('wsCodexTitle').value,
-      category: getDisciplineById(disciplineId)?.title || disciplineId,
-      disciplineId,
-      parentEntryId: document.getElementById('wsCodexParentEntry').value || null,
-      canonStatus: document.getElementById('wsCodexCanonStatus').value,
-      attributes,
-      universe: cleanUniverse,
-      description: document.getElementById('wsCodexDesc').value,
-      isShared: document.getElementById('wsCodexShared').checked
-    });
-    e.target.reset();
-    await refresh();
-    initWorkshopCodex();
-    alert('Картку успішно додано до Кодексу!');
-  } catch (err) {
-    alert(err.message);
-  }
-});
-
-document.getElementById('workshopRelationForm')?.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  if (!getCurrentUser()) return openAuthModal();
-
-  try {
-    await TaliesinAPI.createCodexRelation({
-      sourceId: document.getElementById('wsRelSource').value,
-      targetId: document.getElementById('wsRelTarget').value,
-      diagramType: document.getElementById('wsRelDiagramType').value,
-      roleLabel: document.getElementById('wsRelRoleLabel').value,
-      tierLevel: document.getElementById('wsRelTierLevel').value,
-      periodLabel: document.getElementById('wsRelPeriodLabel').value,
-      sortOrder: (state?.codexRelations || []).length + 1
-    });
-    e.target.reset();
-    await refresh();
-    renderWorkshopRelationsList();
-  } catch (err) {
-    alert(err.message);
-  }
-});
-
-function renderWorkshopRelationsList() {
-  const listEl = document.getElementById('workshopRelationsList');
-  if (!listEl || !state) return;
-
-  const user = getCurrentUser();
-  const entries = state.codexEntries || [];
-  const relations = (state.codexRelations || []).filter(r =>
-    user && (user.role === 'admin' || r.author_id === user.id)
-  );
-
-  if (!relations.length) {
-    listEl.innerHTML = '<p class="subtitle">У вас поки немає створених зв’язків для діаграм.</p>';
-    return;
-  }
-
-  const typeNames = { tree: '🌳 Дерево', rings: '🎯 Кола', timeline: '⏳ Хронологія', web: '🕸️ Зв’язок' };
-
-  listEl.innerHTML = relations.map(r => {
-    const src = entries.find(e => e.id === r.source_id);
-    const tgt = entries.find(e => e.id === r.target_id);
     return `
-      <div class="chapter-item" style="flex-wrap:wrap;">
-        <div>
-          <span class="badge">${typeNames[r.diagram_type] || r.diagram_type}</span>
-          <strong>${escapeHtml(src?.title || '?')}</strong> → <strong>${escapeHtml(tgt?.title || '?')}</strong>
-          ${r.role_label ? `<small class="subtitle">(${escapeHtml(r.role_label)})</small>` : ''}
-          ${r.period_label ? `<small class="subtitle">· ${escapeHtml(r.period_label)}</small>` : ''}
+      <div class="tree-2d-node ${fontCls}" style="left:${item.x}px; top:${item.y}px; ${borderStyle}"
+        onclick="openCodexNodePreview('${item.node.id}')">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:0.25rem;">
+          <strong style="font-size:0.86rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(item.node.title)}</strong>
+          ${item.year !== null ? `<small class="subtitle" style="font-size:0.7rem;">${item.year}</small>` : (item.node.canon_status === 'official' ? '<span>🏛️</span>' : '')}
         </div>
-        <button type="button" class="btn btn-danger" style="padding:0.2rem 0.6rem; font-size:0.8rem;" onclick="deleteWorkshopRelation('${r.id}')">✕</button>
+        <small class="subtitle" style="display:block; font-size:0.73rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:0.15rem;">
+          ${treeLayoutAxis === 'timeline_decades' ? `Покоління ${item.depth + 1} · ` : ''}${escapeHtml(getDisciplineTitle(item.node))}
+        </small>
+
+        ${isEditable ? `
+          <div class="node-2d-actions">
+            <button type="button" class="node-mini-action act-del" onclick="event.stopPropagation(); deleteNodeFrom2DEditor('${item.node.id}')" title="Видалити сутність">✕</button>
+            <button type="button" class="node-mini-action act-edit" onclick="event.stopPropagation(); openNode2DEditModal('${item.node.id}')" title="Редагувати колір, шрифт і батьків">✏️</button>
+            <button type="button" class="node-mini-action act-add" onclick="event.stopPropagation(); openNode2DAddChildModal('${item.node.id}')" title="Додати нащадка">+</button>
+          </div>
+        ` : ''}
       </div>
     `;
   }).join('');
+
+  canvas.innerHTML = `
+    ${toolbarHtml}
+    <div class="tree-2d-viewport">
+      <div class="tree-2d-stage" style="width:${stageWidth}px; height:${stageHeight}px;">
+        ${bandsHtml}
+        <svg class="tree-2d-svg" viewBox="0 0 ${stageWidth} ${stageHeight}">${svgPathsHtml}</svg>
+        ${edgeTagsHtml}
+        ${nodes2DHtml}
+      </div>
+    </div>
+  `;
 }
 
-window.deleteWorkshopRelation = async (relId) => {
+// --- Майстерня: Перемикач 1D Форми / 2D Візуальний редактор дерева ---
+let wsCodexEditorMode = '1d';
+
+function switchWorkshopCodexMode(mode) {
+  wsCodexEditorMode = mode;
+  document.getElementById('wsCodexMode1DBtn')?.classList.toggle('active', mode === '1d');
+  document.getElementById('wsCodexMode2DBtn')?.classList.toggle('active', mode === '2d');
+  document.getElementById('wsCodex1DFormsWrap')?.classList.toggle('hidden', mode !== '1d');
+  document.getElementById('wsCodex2DEditorWrap')?.classList.toggle('hidden', mode !== '2d');
+
+  if (mode === '2d') {
+    renderWorkshop2DEditor();
+  }
+}
+
+document.getElementById('wsCodexMode1DBtn')?.addEventListener('click', () => switchWorkshopCodexMode('1d'));
+document.getElementById('wsCodexMode2DBtn')?.addEventListener('click', () => switchWorkshopCodexMode('2d'));
+document.getElementById('ws2DRootSelect')?.addEventListener('change', renderWorkshop2DEditor);
+
+function renderWorkshop2DEditor() {
+  const select = document.getElementById('ws2DRootSelect');
+  const canvas = document.getElementById('ws2DCanvasArea');
+  if (!select || !canvas || !state) return;
+
+  const entries = state.codexEntries || [];
+  const prev = select.value;
+  select.innerHTML = `<option value="">-- Оберіть корінь дерева для редагування --</option>` +
+    entries.map(e => `<option value="${e.id}">${e.canon_status === 'official' ? '🏛️ ' : '🪶 '}${escapeHtml(e.title)} (${escapeHtml(getDisciplineTitle(e))})</option>`).join('');
+  if (prev && entries.some(e => e.id === prev)) select.value = prev;
+
+  if (!select.value) {
+    canvas.innerHTML = '<p class="subtitle">Оберіть кореневу сутність вище, щоб редагувати дерево прямо на схемі.</p>';
+    return;
+  }
+
+  buildInteractiveTreeHtml({
+    canvas,
+    rootIds: [select.value],
+    isEditable: true
+  });
+}
+
+// 1. Кнопка "+" на вузлі: додати нащадка прямо з 2D-дерева
+window.openNode2DAddChildModal = (parentId) => {
+  const parent = (state.codexEntries || []).find(e => e.id === parentId);
+  if (!parent) return;
+
+  openModal(`
+    <span class="badge">+ Новий нащадок у дереві</span>
+    <h2 style="margin-top:0.5rem;">Батько / Предок: ${escapeHtml(parent.title)}</h2>
+    <form id="node2DAddChildForm" class="stack-form" style="margin-top:1rem;">
+      <input type="text" id="n2dChildTitle" class="input" placeholder="Назва нової сутності (нащадка)" required />
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+        <input type="text" id="n2dChildRole" class="input" style="flex:1;" placeholder="Роль зв'язку (напр. Син, Учень, Підвид)" />
+        <input type="text" id="n2dChildYear" class="input" style="width:140px;" placeholder="Рік / Епоха (напр. 892)" />
+      </div>
+      <textarea id="n2dChildDesc" class="input textarea" rows="3" placeholder="Короткий опис сутності..." required></textarea>
+      <button type="submit" class="btn btn-primary">Створити та приєднати до дерева</button>
+    </form>
+  `);
+
+  document.getElementById('node2DAddChildForm').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const created = await TaliesinAPI.createCodexEntry({
+        title: document.getElementById('n2dChildTitle').value,
+        category: getDisciplineTitle(parent),
+        disciplineId: parent.discipline_id || 'history',
+        universe: parent.universe || '',
+        description: document.getElementById('n2dChildDesc').value,
+        isShared: true
+      });
+      await TaliesinAPI.createCodexRelation({
+        sourceId: parent.id,
+        targetId: created.id,
+        diagramType: 'tree',
+        roleLabel: document.getElementById('n2dChildRole').value,
+        periodLabel: document.getElementById('n2dChildYear').value,
+        sortOrder: (state.codexRelations || []).length + 1
+      });
+      closeModal();
+      await refresh();
+      renderWorkshop2DEditor();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+};
+
+// 2. Кнопка "✏️" на вузлі: колір, шрифт, додавання/видалення/редагування батьківських зв'язків
+window.openNode2DEditModal = (entryId) => {
+  const entry = (state.codexEntries || []).find(e => e.id === entryId);
+  if (!entry) return;
+
+  const entries = (state.codexEntries || []).filter(e => e.id !== entry.id);
+  const incomingRels = (state.codexRelations || []).filter(r => r.target_id === entry.id && r.diagram_type === 'tree');
+  const curColor = entry.visual_style?.color || '#c5962c';
+  const hasCustomColor = Boolean(entry.visual_style?.color);
+  const curFont = entry.visual_style?.font || 'default';
+
+  openModal(`
+    <span class="badge">✏️ Налаштування вузла графа</span>
+    <h2 style="margin-top:0.5rem;">${escapeHtml(entry.title)}</h2>
+
+    <form id="node2DStyleForm" class="stack-form" style="margin-top:0.8rem;">
+      <label class="subtitle">Назва вузла</label>
+      <input type="text" id="n2dEditTitle" class="input" required />
+
+      <div style="display:flex; gap:0.75rem; flex-wrap:wrap; align-items:center;">
+        <div>
+          <label class="subtitle" style="display:block; font-size:0.8rem;">Колір картки</label>
+          <div style="display:flex; gap:0.4rem; align-items:center; margin-top:0.25rem;">
+            <input type="color" id="n2dEditColor" value="${escapeHtml(curColor)}" style="width:42px; height:34px; border:none; background:none; cursor:pointer;" />
+            <label style="font-size:0.82rem; display:flex; align-items:center; gap:0.3rem; cursor:pointer;">
+              <input type="checkbox" id="n2dUseCustomColor" ${hasCustomColor ? 'checked' : ''} /> Власний колір
+            </label>
+          </div>
+        </div>
+
+        <div style="flex:1; min-width:170px;">
+          <label class="subtitle" style="display:block; font-size:0.8rem;">Шрифт вузла</label>
+          <select id="n2dEditFont" class="input" style="margin-top:0.25rem;">
+            <option value="default">Стандартний (Sans)</option>
+            <option value="serif">Книжковий (Serif)</option>
+            <option value="mono">Технічний (Monospace)</option>
+            <option value="display">Акцентний (Display)</option>
+          </select>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary">Зберегти вигляд вузла</button>
+    </form>
+
+    <hr style="margin:1.2rem 0; border-color:var(--border);" />
+    <h4>🧬 Батьківські прив'язки (${incomingRels.length})</h4>
+    <div style="margin:0.5rem 0 0.9rem;">
+      ${incomingRels.length
+        ? incomingRels.map(r => {
+            const p = entries.find(x => x.id === r.source_id);
+            return `
+              <div class="chapter-item" style="flex-wrap:wrap;">
+                <span><strong>${escapeHtml(p?.title || '?')}</strong> → ${escapeHtml(entry.title)} ${r.role_label ? `<small class="subtitle">(${escapeHtml(r.role_label)})</small>` : ''}</span>
+                <div style="display:flex; gap:0.3rem;">
+                  <button type="button" class="btn" style="padding:0.15rem 0.5rem; font-size:0.78rem;" onclick="editParentLinkRole('${r.id}', '${entry.id}')">✏️</button>
+                  <button type="button" class="btn btn-danger" style="padding:0.15rem 0.5rem; font-size:0.78rem;" onclick="removeParentLink('${r.id}', '${entry.id}')">✕</button>
+                </div>
+              </div>
+            `;
+          }).join('')
+        : '<small class="subtitle">Немає вхідних батьківських зв’язків (кореневий вузол).</small>'}
+    </div>
+
+    <form id="node2DAddParentForm" class="stack-form">
+      <strong style="font-size:0.86rem;">+ Прив'язати до ще одного батька / предка</strong>
+      <div style="display:flex; gap:0.45rem; flex-wrap:wrap;">
+        <select id="n2dExtraParentSelect" class="input" style="flex:1;">
+          <option value="">-- Оберіть іншого батька --</option>
+          ${entries.map(e => `<option value="${e.id}">${escapeHtml(e.title)}</option>`).join('')}
+        </select>
+        <input type="text" id="n2dExtraParentRole" class="input" style="width:150px;" placeholder="Роль (напр. Мати)" />
+      </div>
+      <button type="submit" class="btn">Додати прив'язку</button>
+    </form>
+  `);
+
+  document.getElementById('n2dEditTitle').value = entry.title || '';
+  document.getElementById('n2dEditFont').value = curFont;
+
+  document.getElementById('node2DStyleForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const useColor = document.getElementById('n2dUseCustomColor').checked;
+    const visualStyle = {
+      color: useColor ? document.getElementById('n2dEditColor').value : '',
+      font: document.getElementById('n2dEditFont').value
+    };
+    try {
+      await TaliesinAPI.updateCodexEntry(entry.id, {
+        title: document.getElementById('n2dEditTitle').value,
+        category: entry.category,
+        disciplineId: entry.discipline_id,
+        parentEntryId: entry.parent_entry_id,
+        attributes: entry.attributes,
+        universe: entry.universe,
+        description: entry.description,
+        isShared: entry.is_shared,
+        visualStyle
+      });
+      closeModal();
+      await refresh();
+      renderWorkshop2DEditor();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  document.getElementById('node2DAddParentForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const parentId = document.getElementById('n2dExtraParentSelect').value;
+    if (!parentId) return;
+    try {
+      await TaliesinAPI.createCodexRelation({
+        sourceId: parentId,
+        targetId: entry.id,
+        diagramType: 'tree',
+        roleLabel: document.getElementById('n2dExtraParentRole').value,
+        sortOrder: (state.codexRelations || []).length + 1
+      });
+      await refresh();
+      openNode2DEditModal(entry.id);
+      renderWorkshop2DEditor();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+};
+
+window.editParentLinkRole = async (relId, entryId) => {
+  const rel = (state.codexRelations || []).find(r => r.id === relId);
+  if (!rel) return;
+  const nextRole = prompt('Нова роль зв’язку:', rel.role_label || '');
+  if (nextRole === null) return;
   try {
     await TaliesinAPI.deleteCodexRelation(relId);
+    await TaliesinAPI.createCodexRelation({
+      sourceId: rel.source_id,
+      targetId: rel.target_id,
+      diagramType: rel.diagram_type,
+      roleLabel: nextRole,
+      tierLevel: rel.tier_level,
+      periodLabel: rel.period_label,
+      sortOrder: rel.sort_order
+    });
     await refresh();
-    renderWorkshopRelationsList();
+    openNode2DEditModal(entryId);
+    renderWorkshop2DEditor();
   } catch (err) {
     alert(err.message);
   }
 };
 
-// --- Перехід до картки Кодексу прямо з тексту читалки ---
-window.readerReturnContext = null;
-
-window.openCodexTermFromReader = (entryId) => {
-  if (typeof openCodexNodePreview === 'function') {
-    openCodexNodePreview(entryId);
+window.removeParentLink = async (relId, entryId) => {
+  if (!confirm('Видалити цю батьківську прив’язку?')) return;
+  try {
+    await TaliesinAPI.deleteCodexRelation(relId);
+    await refresh();
+    openNode2DEditModal(entryId);
+    renderWorkshop2DEditor();
+  } catch (err) {
+    alert(err.message);
   }
 };
 
-window.quickUnlinkCodexTerm = async (entryId) => {
-  const ctx = window.readerReturnContext;
-  if (!ctx) return;
-
+// 3. Кнопка "✕" на вузлі: видалення сутності з дерева/Кодексу
+window.deleteNodeFrom2DEditor = async (entryId) => {
+  const entry = (state.codexEntries || []).find(e => e.id === entryId);
+  if (!entry) return;
+  if (!confirm(`Видалити сутність «${entry.title}» та всі її зв'язки з Кодексу назавжди?`)) return;
   try {
-    if (ctx.type === 'chapter') {
-      const book = (state.books || []).find(b => b.id === ctx.bookId);
-      if (!book) return;
-      const nextLinks = (book.codex_ids || []).filter(id => id !== entryId);
-      await TaliesinAPI.updateBookCodexLinks(book.id, nextLinks);
-      await refresh();
-      readChapter(ctx.bookId, ctx.chapterId);
-    } else if (ctx.type === 'article') {
-      const art = (state.articles || []).find(a => a.id === ctx.articleId);
-      if (!art) return;
-      const nextLinks = (art.codex_ids || []).filter(id => id !== entryId);
-      const nextExcluded = deduplicateList([...(art.excluded_codex_ids || []), entryId]);
-      await TaliesinAPI.updateArticleCodexLinks(art.id, {
-        codexIds: nextLinks,
-        excludedCodexIds: nextExcluded
-      });
-      await refresh();
-      openArticle(ctx.articleId);
-    }
+    await TaliesinAPI.deleteCodexEntryById(entryId);
+    await refresh();
+    renderWorkshop2DEditor();
   } catch (err) {
     alert(err.message);
   }
