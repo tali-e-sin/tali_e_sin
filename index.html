@@ -151,17 +151,21 @@
 
       <!-- Візуалізатор діаграм сутностей -->
       <div id="codexDiagramsView" class="hidden">
-        <div class="filters">
+        <div class="filters" style="align-items:center;">
           <select id="diagramTypeSelect" class="input">
-            <option value="tree">🌳 Дерево (Родовід / Вид / Локація)</option>
+            <option value="tree">🌳 Дерево / Порівняння родів (1D / 2D / Час)</option>
             <option value="rings">🎯 Кола / Соціальна піраміда (Гільдії та структури)</option>
             <option value="timeline">⏳ Хронологія володіння (Артефакти та локації)</option>
             <option value="web">🕸️ Мережа зв'язків (Усі вхідні та вихідні грані)</option>
           </select>
-          <select id="diagramRootSelect" class="input" style="flex:1; min-width:220px;">
-            <option value="">-- Оберіть кореневу сутність --</option>
+          <select id="diagramRootSelect" class="input" style="flex:1; min-width:210px;">
+            <option value="">-- Основна коренева сутність --</option>
+          </select>
+          <select id="diagramCompareSelect" class="input" style="min-width:200px;">
+            <option value="">+ Порівняти з іншим деревом...</option>
           </select>
         </div>
+        <div id="diagramComparePills" style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-bottom:0.75rem;"></div>
         <div id="diagramCanvasArea" class="diagram-canvas">
           <p class="subtitle">Оберіть кореневу сутність у списку вище, щоб побудувати діаграму зв'язків.</p>
         </div>
@@ -233,12 +237,27 @@
           <button type="submit" class="btn btn-primary">Зберегти главу</button>
         </form>
 
-        <!-- 3. Вкладка: Робота з Кодексом та зв'язками -->
+        <!-- Вкладка 3: Кодекс та зв'язки -->
         <div id="workshopCodexPanel" class="hidden">
-          <h2>📖 Створення картки Кодексу</h2>
-          <p class="subtitle" style="margin-bottom:1rem;">Оберіть науку, вкажіть прототип («Взято за основу») та заповніть специфічні характеристики сутності</p>
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.6rem; margin-bottom:1rem;">
+            <div class="tabs" style="margin:0;">
+              <button type="button" class="tab-btn active" id="wsCodexMode1DBtn">📋 1D Форми</button>
+              <button type="button" class="tab-btn" id="wsCodexMode2DBtn">🕸️ 2D Редактор дерева</button>
+            </div>
+            <span class="subtitle" style="font-size:0.84rem;">У 2D-режимі натискайте <strong>+</strong>, <strong>✏️</strong> або <strong>✕</strong> прямо на картках вузлів</span>
+          </div>
 
-          <form id="workshopCodexForm" class="stack-form">
+          <div id="wsCodex2DEditorWrap" class="hidden">
+            <div class="filters">
+              <select id="ws2DRootSelect" class="input" style="flex:1; min-width:220px;">
+                <option value="">-- Оберіть корінь дерева для редагування --</option>
+              </select>
+            </div>
+            <div id="ws2DCanvasArea" class="diagram-canvas"></div>
+          </div>
+
+          <div id="wsCodex1DFormsWrap">
+            <!-- Тут залишаються ваші існуючі форми workshopCodexForm та workshopRelationForm -->
             <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
               <input type="text" id="wsCodexTitle" class="input" placeholder="Назва сутності (напр., Конунг Рагнар або Ельфи Авену)" style="flex:1; min-width:200px;" required />
               <select id="wsCodexDiscipline" class="input" style="min-width:210px;" required></select>
