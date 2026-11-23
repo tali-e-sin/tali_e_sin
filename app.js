@@ -1678,9 +1678,13 @@ function switchWorkshopTab(tabKey) {
   document.getElementById('articleForm')?.classList.toggle('hidden', tabKey !== 'article');
   document.getElementById('chapterForm')?.classList.toggle('hidden', tabKey !== 'book');
   document.getElementById('workshopCodexPanel')?.classList.toggle('hidden', tabKey !== 'codex');
+  document.getElementById('workshopStory3DPanel')?.classList.toggle('hidden', tabKey !== 'story3d');
   document.getElementById('workshopSchemaPanel')?.classList.toggle('hidden', tabKey !== 'schema');
 
   if (tabKey === 'codex' && typeof initWorkshopCodex === 'function') initWorkshopCodex();
+  if (tabKey === 'story3d' && typeof StoryProjections !== 'undefined') {
+    StoryProjections.renderWorkspace('story3DWorkspaceArea');
+  }
   if (tabKey === 'schema' && typeof renderSchemaArchitect === 'function') renderSchemaArchitect();
 }
 
