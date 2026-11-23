@@ -731,6 +731,40 @@ function extractNumericYear(entry, relations = []) {
   return null;
 }
 
+function extractEventStage(entry, relations = [], defaultOrder = 0) {
+  const attrs = entry?.attributes || {};
+  // 1. Шукаємо явне поле події/глави/етапу в атрибутах картки
+  for (const [k, v] of Object.entries(attrs)) {
+    if (/event|chapter|stage|act|plot|подія|глава|етап|акт|сюжет/i.test(k)) {
+      const text = String(v).trim();
+      if (text) {
+        const numMatch = text.match(/\d+/);
+        return {
+          order: numMatch ? Number(numMatch[0]) : defaultOrder,
+          label: text
+        };
+      }
+    }
+  }
+
+  // 2. Шукаємо вхідний зв'язок (period_label або sort_order)
+  const inRel = relations.find(r => r.target_id === entry.id && r.diagram_type === 'tree');
+  if (inRel) {
+    const rawLabel = String(inRel.period_label || '').trim();
+    const numMatch = rawLabel.match(/\d+/);
+    const ord = Number(inRel.sort_order) || (numMatch ? Number(numMatch[0]) : defaultOrder);
+    return {
+      order: ord,
+      label: rawLabel || `Етап ${ord}`
+    };
+  }
+
+  return {
+    order: defaultOrder,
+    label: `Подія ${defaultOrder}`
+  };
+}
+
 function getNodeFontClass(entry) {
   const f = entry?.visual_style?.font || 'default';
   if (f === 'serif') return 'node-font-serif';
@@ -826,7 +860,8 @@ function buildInteractiveTreeHtml({ canvas, rootIds, isEditable = false }) {
           branchIdx,
           rootOrderIdx,
           childrenIds: [],
-          year: extractNumericYear(node, relations)
+          year: extractNumericYear(node, relations),
+          eventStage: extractEventStage(node, relations, nodeMap.size + 1)
         });
       } else {
         const existing = nodeMap.get(nodeId);
@@ -904,8 +939,9 @@ function buildInteractiveTreeHtml({ canvas, rootIds, isEditable = false }) {
         ` : ''}
         ${treeVisualSubmode === '2d' || isEditable ? `
           <div class="tabs" style="margin:0;">
-            <button type="button" class="tab-btn ${treeLayoutAxis === 'generation' ? 'active' : ''}" onclick="setTreeLayoutAxis('generation')">🏛️ За поколіннями</button>
-            <button type="button" class="tab-btn ${treeLayoutAxis === 'timeline_decades' ? 'active' : ''}" onclick="setTreeLayoutAxis('timeline_decades')">⏳ Шкала часу (Декади)</button>
+            <button type="button" class="tab-btn ${treeLayoutAxis === 'generation' ? 'active' : ''}" onclick="setTreeLayoutAxis('generation')">🏛️ Покоління</button>
+            <button type="button" class="tab-btn ${treeLayoutAxis === 'timeline_decades' ? 'active' : ''}" onclick="setTreeLayoutAxis('timeline_decades')">⏳ Час (Декади)</button>
+            <button type="button" class="tab-btn ${treeLayoutAxis === 'events_plot' ? 'active' : ''}" onclick="setTreeLayoutAxis('events_plot')">📜 Шкала подій</button>
           </div>
         ` : ''}
         <button type="button" class="btn ${treeHighlightGenerations ? 'btn-primary' : ''}" style="padding:0.32rem 0.7rem; font-size:0.78rem;" onclick="toggleTreeGenerations()">
@@ -1016,8 +1052,44 @@ function buildInteractiveTreeHtml({ canvas, rootIds, isEditable = false }) {
   let bandsHtml = '';
   let stageHeight = 400;
 
-  if (treeLayoutAxis === 'timeline_decades') {
-    // Режим 4: Шкала часу з декадами на фоні, а покоління — кольором рамки картки
+  if (treeLayoutAxis === 'events_plot') {
+    // Режим: Шкала подій (сюжетна лінія без прив'язки до календарних дат)
+    const sortedByEvent = [...allItems].sort((a, b) => {
+      const diff = (a.eventStage?.order || 0) - (b.eventStage?.order || 0);
+      return diff !== 0 ? diff : a.depth - b.depth;
+    });
+
+    const stages = [];
+    sortedByEvent.forEach(item => {
+      const lbl = item.eventStage?.label || `Подія ${stages.length + 1}`;
+      let st = stages.find(s => s.label === lbl);
+      if (!st) {
+        st = { label: lbl, items: [] };
+        stages.push(st);
+      }
+      st.items.push(item);
+    });
+
+    const stagesCount = Math.max(1, stages.length);
+    bandsHtml = stages.map((st, idx) => {
+      const top = idx * LEVEL_H;
+      const bg = treeHighlightGenerations ? DECADE_TINTS[idx % DECADE_TINTS.length] : 'transparent';
+      return `
+        <div class="tree-2d-gen-band" style="top:${top}px; height:${LEVEL_H}px; background:${bg};">
+          <span class="time-band-label">📜 ${escapeHtml(st.label)}</span>
+        </div>
+      `;
+    }).join('');
+
+    stages.forEach((st, idx) => {
+      st.items.forEach(item => {
+        item.y = idx * LEVEL_H + 32;
+      });
+    });
+
+    stageHeight = stagesCount * LEVEL_H + 40;
+  } else if (treeLayoutAxis === 'timeline_decades') {
+    // Режим: Шкала часу з декадами на фоні, а покоління — кольором рамки картки
     const years = allItems.map(i => i.year).filter(y => y !== null);
     const minYear = years.length ? Math.min(...years) : 800;
     const maxYear = years.length ? Math.max(...years) : minYear + 30;
@@ -1100,8 +1172,8 @@ function buildInteractiveTreeHtml({ canvas, rootIds, isEditable = false }) {
     const genColor = getGenColor(item.depth);
     const fontCls = getNodeFontClass(item.node);
 
-    // У режимі шкали часу рамка картки підсвічує покоління!
-    const borderStyle = treeLayoutAxis === 'timeline_decades'
+    const isCustomAxis = treeLayoutAxis === 'timeline_decades' || treeLayoutAxis === 'events_plot';
+    const borderStyle = isCustomAxis
       ? `border: 2.5px solid ${customColor || genColor};`
       : `border-top: 4px solid ${branchColor};`;
 
@@ -1113,7 +1185,7 @@ function buildInteractiveTreeHtml({ canvas, rootIds, isEditable = false }) {
           ${item.year !== null ? `<small class="subtitle" style="font-size:0.7rem;">${item.year}</small>` : (item.node.canon_status === 'official' ? '<span>🏛️</span>' : '')}
         </div>
         <small class="subtitle" style="display:block; font-size:0.73rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:0.15rem;">
-          ${treeLayoutAxis === 'timeline_decades' ? `Покоління ${item.depth + 1} · ` : ''}${escapeHtml(getDisciplineTitle(item.node))}
+          ${isCustomAxis ? `Покоління ${item.depth + 1} · ` : ''}${escapeHtml(getDisciplineTitle(item.node))}
         </small>
 
         ${isEditable ? `
@@ -1126,7 +1198,7 @@ function buildInteractiveTreeHtml({ canvas, rootIds, isEditable = false }) {
       </div>
     `;
   }).join('');
-
+  
   canvas.innerHTML = `
     ${toolbarHtml}
     <div class="tree-2d-viewport">
@@ -1745,13 +1817,15 @@ function renderDynamicFieldControl(f, value = '', extraClass = 'ws-dynamic-attr'
         <input type="number" step="any" class="input ${extraClass}" data-attr-key="${key}" placeholder="${label}" value="${val}" />
       </div>`;
   }
+  
   if (type === 'date') {
     return `
       <div>
         <small class="subtitle" style="display:block; margin-bottom:0.2rem;">📅 ${label}</small>
-        <input type="date" class="input ${extraClass}" data-attr-key="${key}" value="${val}" />
+        <input type="text" class="input ${extraClass}" data-attr-key="${key}" placeholder="Напр., 865, 14.05.1024 або 300 до н.е." value="${val}" />
       </div>`;
   }
+  
   if (type === 'unicode') {
     return `
       <div>
