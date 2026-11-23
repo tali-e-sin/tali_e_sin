@@ -582,6 +582,7 @@ function renderArticles() {
             <button class="btn ${isFav ? 'btn-primary' : ''}" onclick="toggleFavoriteArticle('${art.id}')">
               ${isFav ? '★ В обраному' : '🔖 В обране'}
             </button>
+            <button type="button" class="btn" onclick="UniversalProjectionEngine.openWorkMapModal('article', '${art.id}', '3d')" title="Відкрити 1D/2D/3D атлас статті">🧊 Атлас</button>
             ${canEditArticle(art, user) ? `<button class="btn" onclick="openEditArticleModal('${art.id}')">✏️ Редагувати</button>` : ''}
           </div>
         </div>
@@ -850,6 +851,7 @@ function renderBooks() {
               ${getBookCodexEntries(book).length
                 ? `<button class="btn" style="padding:0.25rem 0.7rem; font-size:0.8rem;" onclick="openBookCodexModal('${book.id}')">📖 Кодекс (${getBookCodexEntries(book).length})</button>`
                 : ''}
+                <button type="button" class="btn" style="padding:0.25rem 0.7rem; font-size:0.8rem;" onclick="UniversalProjectionEngine.openWorkMapModal('book', '${book.id}', '3d')" title="Відкрити 1D/2D/3D атлас книги">🧊 Атлас</button>
             </div>
           </div>
           <h3 style="margin-top:0.5rem;">${book.title}</h3>
