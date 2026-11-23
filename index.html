@@ -107,57 +107,67 @@
       <div id="booksList" class="cards-grid"></div>
     </section>
 
-    <!-- Секція Кодексу (Таблиця/Картки + Діаграми) -->
+    <!-- 4. СПІЛЬНИЙ КОДЕКС ТА НАУКИ СВІТІВ -->
     <section id="view-codex" class="view-section hidden">
-      <div class="section-header">
+      <div class="section-head">
         <div>
-          <h1>📖 Кодекс Світів та Знань</h1>
-          <p class="subtitle">Онтологія рас, родоводів, локацій, артефактів та фундаментальних наук</p>
+          <h1>Кодекс та Енциклопедія Світів</h1>
+          <p class="subtitle">Фундаментальні науки, канонічні поняття та графові зв'язки всесвітів</p>
         </div>
-        <div class="filters">
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
           <div class="tabs" style="margin:0;">
-            <button type="button" class="tab-btn active" id="codexModeCardsBtn" data-codex-mode="cards">📋 Картки</button>
-            <button type="button" class="tab-btn" id="codexModeDiagramsBtn" data-codex-mode="diagrams">🌳 Діаграми</button>
+            <button type="button" class="tab-btn active" id="codexModeCardsBtn">📋 Картки та Науки</button>
+            <button type="button" class="tab-btn" id="codexModeDiagramsBtn">🕸️ Діаграми сутностей</button>
           </div>
-          <button type="button" id="openWorkshopCodexBtn" class="btn btn-primary auth-only hidden">+ Створити в Майстерні</button>
+          <button type="button" class="btn btn-primary auth-only hidden" id="openWorkshopCodexBtn">+ Додати запис</button>
         </div>
       </div>
 
-      <!-- Фільтри режиму карток / таблиці -->
-      <div id="codexCardsToolbar" class="filters" style="margin-bottom:1.2rem;">
-        <input type="search" id="globalCodexSearch" class="input" placeholder="Пошук за назвою, описом, #світом або #книгою..." style="flex:1; min-width:200px;" />
-        <select id="globalCodexDiscipline" class="input">
-          <option value="all">Усі науки та галузі</option>
-        </select>
-        <select id="globalCodexCanonFilter" class="input">
-          <option value="all">Усі статуси (Канон + Авторські)</option>
-          <option value="official">🏛️ Лише Канон (офіційні)</option>
-          <option value="community">🪶 Авторські світи</option>
-        </select>
+      <!-- Меню наук (1D розгортаючийся список або 2D граф наук) -->
+      <div id="codexDisciplinesNavWrap" class="card" style="margin-bottom:1.25rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.6rem; margin-bottom:0.8rem;">
+          <div>
+            <strong style="font-size:1rem;">🏛️ Навігатор наук та розділів</strong>
+            <div class="subtitle" style="font-size:0.83rem;">Оберіть науку, щоб переглянути її картки та підрозділи</div>
+          </div>
+          <div class="tabs" style="margin:0;">
+            <button type="button" class="tab-btn active" id="discMenu1DBtn">📂 1D Список</button>
+            <button type="button" class="tab-btn" id="discMenu2DBtn">🧬 2D Дерево наук</button>
+          </div>
+        </div>
+        <div id="codexDisciplinesMenuArea"></div>
       </div>
+
+      <!-- Компактний пошук + кнопка Розширеного пошуку -->
+      <div id="codexCardsToolbar" class="filters">
+        <input type="search" id="globalCodexSearch" class="input" placeholder="Пошук за назвою, описом, автором або #всесвітом..." style="flex:1; min-width:220px;" />
+        <button type="button" class="btn" id="openAdvancedCodexSearchBtn">⚙️ Розширений пошук <span id="advSearchActiveBadge" class="badge hidden">●</span></button>
+        <button type="button" class="btn hidden" id="resetCodexFiltersBtn">✕ Скинути фільтр</button>
+      </div>
+
+      <div id="activeDisciplineBanner" class="hidden" style="margin-bottom:1rem;"></div>
 
       <div id="globalCodexList" class="cards-grid"></div>
 
-      <!-- Режим візуальних діаграм -->
+      <!-- Візуалізатор діаграм сутностей -->
       <div id="codexDiagramsView" class="hidden">
-        <div class="editor-card" style="margin-bottom:1.2rem;">
-          <div class="filters">
-            <select id="diagramTypeSelect" class="input">
-              <option value="tree">🌳 Дерево (Родовід / Вид / Локація)</option>
-              <option value="rings">🎯 Кола / Соціальна піраміда (Гільдії та структури)</option>
-              <option value="timeline">⏳ Хронологія володіння (Артефакти та локації)</option>
-              <option value="web">🕸️ Мережа зв'язків (Усі вхідні та вихідні грані)</option>
-              <option value="disciplines">🧬 Дерево фундаментальних наук</option>
-            </select>
-            <select id="diagramRootSelect" class="input" style="flex:1; min-width:220px;">
-              <option value="">-- Оберіть кореневу сутність або структуру --</option>
-            </select>
-          </div>
+        <div class="filters">
+          <select id="diagramTypeSelect" class="input">
+            <option value="tree">🌳 Дерево (Родовід / Вид / Локація)</option>
+            <option value="rings">🎯 Кола / Соціальна піраміда (Гільдії та структури)</option>
+            <option value="timeline">⏳ Хронологія володіння (Артефакти та локації)</option>
+            <option value="web">🕸️ Мережа зв'язків (Усі вхідні та вихідні грані)</option>
+          </select>
+          <select id="diagramRootSelect" class="input" style="flex:1; min-width:220px;">
+            <option value="">-- Оберіть кореневу сутність --</option>
+          </select>
         </div>
-        <div id="diagramCanvasArea" class="editor-card"></div>
+        <div id="diagramCanvasArea" class="diagram-canvas">
+          <p class="subtitle">Оберіть кореневу сутність у списку вище, щоб побудувати діаграму зв'язків.</p>
+        </div>
       </div>
     </section>
-
+    
     <!-- Секція Зали слави -->
     <section id="view-hall" class="view-section hidden">
       <div class="section-header">
