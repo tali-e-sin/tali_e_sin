@@ -211,3 +211,181 @@ function closeModal() {
 
 document.getElementById('closeModal')?.addEventListener('click', closeModal);
 modalBackdrop?.addEventListener('click', (e) => { if (e.target === modalBackdrop) closeModal(); });
+
+// ============================================================================
+// УНІВЕРСАЛЬНА СИСТЕМА КОМЕНТАРІВ (Статті, Книги, Картки Кодексу)
+// ============================================================================
+const PortalComments = {
+  getComments(targetType, targetId) {
+    if (targetType === 'article') {
+      const art = (state?.articles || []).find(a => a.id === targetId);
+      return Array.isArray(art?.comments) ? art.comments : [];
+    }
+    if (targetType === 'book') {
+      const book = (state?.books || []).find(b => b.id === targetId);
+      return Array.isArray(book?.comments) ? book.comments : [];
+    }
+    if (targetType === 'codex') {
+      const entry = (state?.codexEntries || []).find(e => e.id === targetId);
+      return Array.isArray(entry?.attributes?.tree_comments) ? entry.attributes.tree_comments : [];
+    }
+    return [];
+  },
+
+  renderCommentTree(comments, targetType, targetId, parentId = null, depth = 0) {
+    const list = comments.filter(c => (c.parent_id || null) === parentId);
+    if (!list.length) return '';
+
+    return list.map(c => {
+      const dateStr = c.created_at ? new Date(c.created_at).toLocaleDateString('uk-UA') : '';
+      const likes = Number(c.likes) || 0;
+      return `
+        <div class="comment-item" style="margin-left:${Math.min(48, depth * 18)}px; margin-top:0.65rem; padding:0.75rem 0.9rem; border-radius:12px; background:var(--bg-subtle); border:1px solid var(--border);">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; font-size:0.84rem;">
+            <div>
+              <strong style="color:var(--accent);">${escapeHtml(c.author || 'Бард')}</strong>
+              ${dateStr ? `<small class="subtitle" style="margin-left:0.4rem;">${dateStr}</small>` : ''}
+            </div>
+          </div>
+          <div style="margin:0.45rem 0; white-space:pre-line; font-size:0.94rem;">${escapeHtml(c.text)}</div>
+          <div style="display:flex; gap:0.75rem; align-items:center; font-size:0.82rem;">
+            <button type="button" class="author-link" onclick="PortalComments.toggleLike('${targetType}', '${targetId}', '${c.id}')">🤍 ${likes}</button>
+            <button type="button" class="author-link" onclick="PortalComments.showReplyForm('${c.id}')">↩ Відповісти</button>
+          </div>
+          <div id="replyFormBox_${c.id}" class="hidden" style="display:flex; gap:0.45rem; margin-top:0.55rem; align-items:center;">
+            <input type="text" id="replyInput_${c.id}" class="input" placeholder="Ваша відповідь..." style="flex:1; padding:0.45rem 0.7rem;" />
+            <button type="button" class="btn btn-primary" style="padding:0.45rem 0.85rem;" onclick="PortalComments.submitComment('${targetType}', '${targetId}', '${c.id}')">Надіслати</button>
+            <button type="button" class="btn" style="padding:0.45rem 0.65rem;" onclick="PortalComments.hideReplyForm('${c.id}')">✕</button>
+          </div>
+          ${this.renderCommentTree(comments, targetType, targetId, c.id, depth + 1)}
+        </div>
+      `;
+    }).join('');
+  },
+
+  showReplyForm(commentId) {
+    const el = document.getElementById(`replyFormBox_${commentId}`);
+    if (el) {
+      el.classList.remove('hidden');
+      document.getElementById(`replyInput_${commentId}`)?.focus();
+    }
+  },
+
+  hideReplyForm(commentId) {
+    document.getElementById(`replyFormBox_${commentId}`)?.classList.add('hidden');
+  },
+
+  openCommentsModal(targetType, targetId) {
+    const titleMap = {
+      article: (state?.articles || []).find(a => a.id === targetId)?.title || 'Стаття',
+      book: (state?.books || []).find(b => b.id === targetId)?.title || 'Книга',
+      codex: (state?.codexEntries || []).find(e => e.id === targetId)?.title || 'Запис Кодексу'
+    };
+    const comments = this.getComments(targetType, targetId);
+
+    openModal(`
+      <span class="badge">💬 Обговорення</span>
+      <h2 style="margin-top:0.45rem;">${escapeHtml(titleMap[targetType])}</h2>
+      <hr style="margin:0.85rem 0; border-color:var(--border);" />
+
+      <h3 style="margin-bottom:0.5rem;">Коментарі (${comments.length})</h3>
+      <div id="portalCommentsTreeContainer" style="max-height:340px; overflow-y:auto; padding-right:0.25rem; margin-bottom:1rem;">
+        ${comments.length
+          ? this.renderCommentTree(comments, targetType, targetId, null, 0)
+          : '<p class="subtitle">Поки немає коментарів. Будьте першим!</p>'}
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:0.5rem;">
+        <textarea id="newRootCommentInput" class="input textarea" rows="2" placeholder="Написати коментар..."></textarea>
+        <button type="button" class="btn btn-primary" style="align-self:flex-start;" onclick="PortalComments.submitComment('${targetType}', '${targetId}', null)">Надіслати</button>
+      </div>
+    `);
+  },
+
+  async submitComment(targetType, targetId, parentId = null) {
+    const user = getCurrentUser();
+    if (!user) return openAuthModal();
+
+    const inputEl = parentId
+      ? document.getElementById(`replyInput_${parentId}`)
+      : document.getElementById('newRootCommentInput');
+    const text = (inputEl?.value || '').trim();
+    if (!text) return;
+
+    try {
+      if (targetType === 'article') {
+        await TaliesinAPI.addComment(targetId, text, parentId);
+      } else if (targetType === 'codex') {
+        const entry = (state.codexEntries || []).find(e => e.id === targetId);
+        if (!entry) return;
+        const attrs = { ...(entry.attributes || {}) };
+        const nextList = [...(Array.isArray(attrs.tree_comments) ? attrs.tree_comments : []), {
+          id: 'cmt_' + Date.now(),
+          parent_id: parentId || null,
+          author: user.name || user.email || 'Бард',
+          text,
+          likes: 0,
+          created_at: new Date().toISOString()
+        }];
+        attrs.tree_comments = nextList;
+        await TaliesinAPI.updateCodexEntry(entry.id, {
+          title: entry.title,
+          category: entry.category,
+          disciplineId: entry.discipline_id,
+          parentEntryId: entry.parent_entry_id,
+          attributes: attrs,
+          universe: entry.universe,
+          description: entry.description,
+          isShared: entry.is_shared,
+          visualStyle: entry.visual_style,
+          isSystemPrimitive: entry.is_system_primitive
+        });
+      } else if (targetType === 'book') {
+        // Зберігаємо коментарі книги у localStorage або через API, якщо є колонка comments
+        const key = `taliesin_book_comments_${targetId}`;
+        const existing = JSON.parse(localStorage.getItem(key) || '[]');
+        existing.push({
+          id: 'cmt_' + Date.now(),
+          parent_id: parentId || null,
+          author: user.name || user.email || 'Бард',
+          text,
+          likes: 0,
+          created_at: new Date().toISOString()
+        });
+        localStorage.setItem(key, JSON.stringify(existing));
+        const book = (state.books || []).find(b => b.id === targetId);
+        if (book) book.comments = existing;
+      }
+
+      await refresh();
+      this.openCommentsModal(targetType, targetId);
+    } catch (err) {
+      alert(err.message);
+    }
+  },
+
+  async toggleLike(targetType, targetId, commentId) {
+    if (targetType === 'codex') {
+      const entry = (state.codexEntries || []).find(e => e.id === targetId);
+      if (!entry) return;
+      const attrs = { ...(entry.attributes || {}) };
+      attrs.tree_comments = (attrs.tree_comments || []).map(c =>
+        c.id === commentId ? { ...c, likes: (Number(c.likes) || 0) + 1 } : c
+      );
+      await TaliesinAPI.updateCodexEntry(entry.id, {
+        title: entry.title,
+        category: entry.category,
+        disciplineId: entry.discipline_id,
+        parentEntryId: entry.parent_entry_id,
+        attributes: attrs,
+        universe: entry.universe,
+        description: entry.description,
+        isShared: entry.is_shared,
+        visualStyle: entry.visual_style,
+        isSystemPrimitive: entry.is_system_primitive
+      });
+      await refresh();
+      this.openCommentsModal('codex', targetId);
+    }
+  }
+};
