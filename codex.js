@@ -479,7 +479,7 @@ function renderGlobalCodex() {
 
           ${renderEntryAttributes(entry)}
 
-          ${renderEntryDrawingField(entry)}
+          ${renderEntryVisualAndStoryBlock(entry)}
 
           ${entry.description ? `<p style="white-space:pre-line; color:var(--text-main); margin:0.4rem 0 0;">${escapeHtml(entry.description)}</p>` : ''}
           
@@ -501,6 +501,8 @@ function renderGlobalCodex() {
             <span>✍️ ${renderAuthorLink(entry.author_name || 'Хранитель', entry.author_id || '')}</span>
             <div style="display:flex; gap:0.35rem; flex-wrap:wrap;">
               <button type="button" class="btn" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="openEntryDiagram('${entry.id}')" title="Відкрити діаграми зв'язків">🌳</button>
+              <button type="button" class="btn" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="replyToCodexComment('${entry.id}', null)" title="Коментарі">💬 ${(entry.attributes?.tree_comments || []).length}</button>
+              ${renderCodexCommentTreeNodes(entry.attributes?.tree_comments || [], entry.id, null, 0)}
               ${isOwner && entry.canon_status === 'community' ? `<button type="button" class="btn" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="proposeEntryCanon('${entry.id}')" title="Подати на узгодження як Канон">🏛️</button>` : ''}
               ${isAdmin && entry.canon_status !== 'official' ? `<button type="button" class="btn btn-primary" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="approveEntryCanon('${entry.id}')" title="Затвердити як Канон">✓ Канон</button>` : ''}
               ${canTip ? `<button type="button" class="btn" style="padding:0.25rem 0.65rem; font-size:0.8rem;" onclick="openTipModal('${escapeHtml(entry.author_id)}', '${escapeHtml(entry.author_name || 'Бард')}', 'Кодекс: ${escapeHtml(entry.title)}')">🎁</button>` : ''}
@@ -597,6 +599,7 @@ window.openEditCodexModal = (entryId, returnBookId = null) => {
         </label>
       ` : ''}
       <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+        <button type="button" class="btn" onclick="openCoordinateShapeEditor(entry.attributes?.shape_model, (m) => { updatedAttrs.shape_model = m; alert('Координати оновлено — натисніть «Зберегти зміни»'); })">📐 Координати фігури</button>
         <button type="submit" class="btn btn-primary">Зберегти зміни</button>
         ${returnBookId
           ? `<button type="button" class="btn" onclick="openBookEditorModal('${returnBookId}')">Скасувати</button>`
@@ -2013,6 +2016,10 @@ document.getElementById('workshopCodexForm')?.addEventListener('submit', async (
     if (k && v) attributes[k] = v;
   });
 
+  if (wsDraftShapeModel) {
+  attributes.shape_model = wsDraftShapeModel;
+}
+
   const cleanUniverse = parseUniverseTags(document.getElementById('wsCodexUniverse').value).join(', ');
   const disciplineId = document.getElementById('wsCodexDiscipline').value;
 
@@ -2030,6 +2037,7 @@ document.getElementById('workshopCodexForm')?.addEventListener('submit', async (
       isSystemPrimitive: Boolean(document.getElementById('wsCodexSystemPrimitive')?.checked)
     });
     e.target.reset();
+    wsDraftShapeModel = null;
     await refresh();
     initWorkshopCodex();
     alert('Картку успішно додано до Кодексу!');
@@ -2348,3 +2356,453 @@ function renderGraphZoomToolbarHtml(stageWidth = 720) {
     </div>
   `;
 }
+
+let wsDraftShapeModel = null;
+let editDraftShapeModel = null;
+
+function createDefaultShapeModel(title = 'Фігура') {
+  return {
+    title,
+    vanishingPoints: [
+      { id: 'vp_main', label: 'Точка перспективи 1', x: 280, y: 80 }
+    ],
+    items: [
+      {
+        id: 'el_1',
+        type: 'rect',
+        vpId: 'vp_main',
+        x: 180,
+        y: 130,
+        w: 200,
+        h: 110,
+        detailLevel: 1, // 1 = базовий, 2 = середній, 3 = дрібний
+        color: '#c5962c',
+        lineWidth: 2.5
+      },
+      {
+        id: 'el_2',
+        type: 'circle',
+        vpId: 'vp_main',
+        x: 280,
+        y: 185,
+        r: 28,
+        detailLevel: 2,
+        color: '#2b6cb0',
+        lineWidth: 2
+      },
+      {
+        id: 'el_3',
+        type: 'point',
+        vpId: 'vp_main',
+        x: 340,
+        y: 150,
+        r: 4,
+        detailLevel: 3, // зникає при сильному зменшенні
+        color: '#2e8b57',
+        lineWidth: 2
+      }
+    ]
+  };
+}
+
+function normalizeShapeModel(raw, fallbackTitle = 'Фігура') {
+  if (raw && typeof raw === 'object' && Array.isArray(raw.items)) {
+    return {
+      title: raw.title || fallbackTitle,
+      vanishingPoints: Array.isArray(raw.vanishingPoints) && raw.vanishingPoints.length
+        ? raw.vanishingPoints
+        : [{ id: 'vp_main', label: 'Точка перспективи 1', x: 280, y: 80 }],
+      items: raw.items
+    };
+  }
+  return createDefaultShapeModel(fallbackTitle);
+}
+
+function shouldRenderItemAtZoom(item, zoom = 1, exportScale = 1) {
+  const effectiveZoom = zoom * exportScale;
+  const lvl = Number(item.detailLevel) || 1;
+  if (effectiveZoom < 0.55 && lvl >= 2) return false;
+  if (effectiveZoom < 0.85 && lvl >= 3) return false;
+
+  if (item.type === 'circle' || item.type === 'point') {
+    const screenR = (Number(item.r) || 4) * effectiveZoom;
+    return screenR >= 3.5;
+  }
+  if (item.type === 'rect') {
+    const screenW = (Number(item.w) || 20) * effectiveZoom;
+    const screenH = (Number(item.h) || 20) * effectiveZoom;
+    return screenW >= 10 && screenH >= 10;
+  }
+  return true;
+}
+
+function renderShapeModelToSvgString(model, { width = 560, height = 320, zoom = 1, showGuides = true } = {}) {
+  const m = normalizeShapeModel(model);
+  const vpMap = new Map(m.vanishingPoints.map(vp => [vp.id, vp]));
+
+  const guidesHtml = showGuides
+    ? m.vanishingPoints.map(vp => `
+        <g>
+          <circle cx="${vp.x}" cy="${vp.y}" r="6" fill="none" stroke="#d97706" stroke-width="2" stroke-dasharray="3 2" />
+          <text x="${vp.x + 9}" y="${vp.y + 4}" fill="#d97706" font-size="10" font-weight="700">${escapeHtml(vp.label || 'VP')}</text>
+        </g>
+      `).join('')
+    : '';
+
+  const raysHtml = showGuides
+    ? m.items
+        .filter(it => shouldRenderItemAtZoom(it, zoom, 1))
+        .map(it => {
+          const vp = vpMap.get(it.vpId) || m.vanishingPoints[0];
+          if (!vp) return '';
+          return `<line x1="${vp.x}" y1="${vp.y}" x2="${it.x}" y2="${it.y}" stroke="#d97706" stroke-width="0.9" stroke-dasharray="4 4" opacity="0.55" />`;
+        }).join('')
+    : '';
+
+  const elementsHtml = m.items
+    .filter(it => shouldRenderItemAtZoom(it, zoom, 1))
+    .map(it => {
+      const col = escapeHtml(it.color || '#c5962c');
+      const lw = Math.max(1, Number(it.lineWidth) || 2);
+      if (it.type === 'circle' || it.type === 'point') {
+        const r = Math.max(2, Number(it.r) || 12);
+        return `<circle cx="${it.x}" cy="${it.y}" r="${r}" fill="${it.type === 'point' ? col : 'none'}" stroke="${col}" stroke-width="${lw}" />`;
+      }
+      if (it.type === 'line') {
+        const x2 = it.x2 ?? (it.x + 80);
+        const y2 = it.y2 ?? it.y;
+        return `<line x1="${it.x}" y1="${it.y}" x2="${x2}" y2="${y2}" stroke="${col}" stroke-width="${lw}" />`;
+      }
+      const w = Math.max(8, Number(it.w) || 80);
+      const h = Math.max(8, Number(it.h) || 50);
+      return `<rect x="${it.x - w / 2}" y="${it.y - h / 2}" width="${w}" height="${h}" rx="6" fill="none" stroke="${col}" stroke-width="${lw}" />`;
+    }).join('');
+
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" style="display:block; width:100%; height:auto; background:#ffffff; border-radius:8px;">
+      ${raysHtml}
+      ${elementsHtml}
+      ${guidesHtml}
+    </svg>
+  `;
+}
+
+function getLinkedStoryEntriesForCodex(entry) {
+  const all = state?.codexEntries || [];
+  const rels = state?.codexRelations || [];
+  const linkedIds = new Set();
+
+  rels.forEach(r => {
+    if (r.source_id === entry.id) linkedIds.add(r.target_id);
+    if (r.target_id === entry.id) linkedIds.add(r.source_id);
+  });
+
+  return all.filter(e =>
+    (e.discipline_id === 'dramaturgy' && !e.is_system_primitive) &&
+    (linkedIds.has(e.id) || (entry.universe && e.universe && entry.universe.includes(entry.universe.split(',')[0].trim())))
+  );
+}
+
+function renderEntryVisualAndStoryBlock(entry) {
+  const hasShape = Boolean(entry?.attributes?.shape_model);
+  const stories = getLinkedStoryEntriesForCodex(entry);
+  const storyAttr = entry?.attributes?.linked_story_title;
+
+  const shapeHtml = hasShape
+    ? `
+      <div class="codex-drawing-box">
+        <div class="codex-drawing-label">📐 Координатна геометрія та перспектива</div>
+        ${renderShapeModelToSvgString(entry.attributes.shape_model, { showGuides: false })}
+      </div>
+    `
+    : '';
+
+  const storyHtml = (stories.length || storyAttr)
+    ? `
+      <div style="margin:0.65rem 0; padding:0.55rem 0.75rem; border-radius:10px; background:var(--bg-subtle); border:1px solid var(--border);">
+        <strong style="font-size:0.78rem; color:var(--accent);">🎬 Пов’язаний сюжет:</strong>
+        <div style="display:flex; gap:0.35rem; flex-wrap:wrap; margin-top:0.35rem;">
+          ${storyAttr ? `<span class="badge">${escapeHtml(storyAttr)}</span>` : ''}
+          ${stories.map(s => `<button type="button" class="badge" style="cursor:pointer;" onclick="openCodexNodePreview('${s.id}')">${escapeHtml(s.title)}</button>`).join('')}
+        </div>
+      </div>
+    `
+    : '';
+
+  return `${shapeHtml}${storyHtml}`;
+}
+
+window.openCoordinateShapeEditor = (initialModel, onSaveCallback) => {
+  const model = normalizeShapeModel(initialModel);
+  let activeZoom = 1.0;
+  let selectedItemId = model.items[0]?.id || null;
+  let dragTarget = null; // { kind: 'item' | 'vp', id, startX, startY, origX, origY }
+
+  openModal(`
+    <span class="badge">📐 Координатний редактор фігур та перспективи</span>
+    <h2 style="margin-top:0.45rem;">Точки перспективи та редаговані координати</h2>
+
+    <div style="display:flex; gap:0.4rem; flex-wrap:wrap; align-items:center; margin:0.65rem 0;">
+      <select id="coordAddType" class="input" style="padding:0.35rem 0.6rem;">
+        <option value="rect">+ Прямокутник</option>
+        <option value="circle">+ Коло</option>
+        <option value="point">+ Дрібна деталь (LOD 3)</option>
+      </select>
+      <select id="coordDetailSelect" class="input" style="padding:0.35rem 0.6rem;">
+        <option value="1">Рівень 1 (основний)</option>
+        <option value="2">Рівень 2 (середній)</option>
+        <option value="3">Рівень 3 (дрібний, зникає при зум-ауті)</option>
+      </select>
+      <button type="button" id="coordAddElemBtn" class="btn">+ Додати елемент</button>
+      <button type="button" id="coordAddVpBtn" class="btn">+ Точка перспективи</button>
+    </div>
+
+    <div style="display:flex; gap:0.4rem; flex-wrap:wrap; align-items:center; margin-bottom:0.65rem;">
+      <button type="button" class="btn" style="padding:0.2rem 0.55rem; font-size:0.78rem;" id="coordZoomOutBtn">🔍 −</button>
+      <span id="coordZoomLabel" class="badge">Масштаб: 100%</span>
+      <button type="button" class="btn" style="padding:0.2rem 0.55rem; font-size:0.78rem;" id="coordZoomInBtn">🔍 +</button>
+      <button type="button" class="btn" style="padding:0.2rem 0.55rem; font-size:0.78rem;" id="coordExportJsonBtn">💾 Формат координат (.json)</button>
+      <button type="button" class="btn" style="padding:0.2rem 0.55rem; font-size:0.78rem;" id="coordExportPngBtn">🖼️ Зображення (.png)</button>
+      <label class="btn" style="padding:0.2rem 0.55rem; font-size:0.78rem; cursor:pointer;">
+        📂 Імпорт .json
+        <input type="file" id="coordImportJsonInput" accept=".json,application/json" hidden />
+      </label>
+    </div>
+
+    <div id="coordCanvasWrap" style="border:1px solid var(--border); border-radius:12px; padding:0.5rem; background:var(--bg-subtle); overflow:auto;"></div>
+
+    <div id="coordInspectorBox" style="margin-top:0.65rem; font-size:0.84rem;"></div>
+
+    <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.9rem;">
+      <button type="button" id="coordSaveModelBtn" class="btn btn-primary">✓ Зберегти координати</button>
+      <button type="button" class="btn" onclick="closeModal()">Закрити</button>
+    </div>
+  `);
+
+  const redraw = () => {
+    document.getElementById('coordZoomLabel').textContent = `Масштаб: ${Math.round(activeZoom * 100)}%`;
+    const wrap = document.getElementById('coordCanvasWrap');
+    wrap.innerHTML = `
+      <div style="width:${Math.round(560 * activeZoom)}px; transform:scale(${activeZoom}); transform-origin:top left;">
+        ${renderShapeModelToSvgString(model, { width: 560, height: 320, zoom: activeZoom, showGuides: true })}
+      </div>
+    `;
+
+    const svg = wrap.querySelector('svg');
+    if (svg) {
+      svg.onmousedown = (e) => {
+        const rect = svg.getBoundingClientRect();
+        const x = ((e.clientX - rect.left) / rect.width) * 560;
+        const y = ((e.clientY - rect.top) / rect.height) * 320;
+
+        const hitVp = model.vanishingPoints.find(vp => Math.hypot(vp.x - x, vp.y - y) < 14);
+        if (hitVp) {
+          dragTarget = { kind: 'vp', id: hitVp.id, origX: hitVp.x, origY: hitVp.y, startX: x, startY: y };
+          return;
+        }
+
+        const hitItem = [...model.items].reverse().find(it =>
+          shouldRenderItemAtZoom(it, activeZoom, 1) && Math.hypot(it.x - x, it.y - y) < 28
+        );
+        if (hitItem) {
+          selectedItemId = hitItem.id;
+          dragTarget = { kind: 'item', id: hitItem.id, origX: hitItem.x, origY: hitItem.y, startX: x, startY: y };
+          renderInspector();
+        }
+      };
+
+      svg.onmousemove = (e) => {
+        if (!dragTarget) return;
+        const rect = svg.getBoundingClientRect();
+        const x = ((e.clientX - rect.left) / rect.width) * 560;
+        const y = ((e.clientY - rect.top) / rect.height) * 320;
+        const dx = Math.round(x - dragTarget.startX);
+        const dy = Math.round(y - dragTarget.startY);
+
+        if (dragTarget.kind === 'vp') {
+          const vp = model.vanishingPoints.find(v => v.id === dragTarget.id);
+          if (vp) { vp.x = Math.max(10, Math.min(550, dragTarget.origX + dx)); vp.y = Math.max(10, Math.min(310, dragTarget.origY + dy)); }
+        } else {
+          const it = model.items.find(i => i.id === dragTarget.id);
+          if (it) { it.x = Math.max(10, Math.min(550, dragTarget.origX + dx)); it.y = Math.max(10, Math.min(310, dragTarget.origY + dy)); }
+        }
+        redraw();
+      };
+
+      window.onmouseup = () => { dragTarget = null; };
+    }
+    renderInspector();
+  };
+
+  const renderInspector = () => {
+    const box = document.getElementById('coordInspectorBox');
+    const it = model.items.find(i => i.id === selectedItemId);
+    if (!it) {
+      box.innerHTML = '<small class="subtitle">Клікніть по елементу на полотні, щоб змінити його координати або розмір.</small>';
+      return;
+    }
+    box.innerHTML = `
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; padding:0.5rem; background:var(--bg-surface); border-radius:8px; border:1px solid var(--border);">
+        <strong>Елемент (${escapeHtml(it.type)}):</strong>
+        <label>X: <input type="number" id="inspX" class="input" style="width:72px; padding:0.2rem 0.4rem;" value="${it.x}" /></label>
+        <label>Y: <input type="number" id="inspY" class="input" style="width:72px; padding:0.2rem 0.4rem;" value="${it.y}" /></label>
+        ${it.type === 'rect' ? `<label>W: <input type="number" id="inspW" class="input" style="width:72px; padding:0.2rem 0.4rem;" value="${it.w || 80}" /></label>` : ''}
+        ${it.type === 'circle' || it.type === 'point' ? `<label>R: <input type="number" id="inspR" class="input" style="width:72px; padding:0.2rem 0.4rem;" value="${it.r || 12}" /></label>` : ''}
+        <button type="button" class="btn btn-danger" style="padding:0.2rem 0.5rem; font-size:0.78rem;" id="inspDelBtn">✕</button>
+      </div>
+    `;
+    document.getElementById('inspX')?.addEventListener('change', (e) => { it.x = Number(e.target.value) || 0; redraw(); });
+    document.getElementById('inspY')?.addEventListener('change', (e) => { it.y = Number(e.target.value) || 0; redraw(); });
+    document.getElementById('inspW')?.addEventListener('change', (e) => { it.w = Math.max(8, Number(e.target.value) || 40); redraw(); });
+    document.getElementById('inspR')?.addEventListener('change', (e) => { it.r = Math.max(2, Number(e.target.value) || 8); redraw(); });
+    document.getElementById('inspDelBtn')?.addEventListener('click', () => {
+      model.items = model.items.filter(x => x.id !== it.id);
+      selectedItemId = model.items[0]?.id || null;
+      redraw();
+    });
+  };
+
+  document.getElementById('coordZoomInBtn').onclick = () => { activeZoom = Math.min(2.2, Number((activeZoom + 0.15).toFixed(2))); redraw(); };
+  document.getElementById('coordZoomOutBtn').onclick = () => { activeZoom = Math.max(0.35, Number((activeZoom - 0.15).toFixed(2))); redraw(); };
+
+  document.getElementById('coordAddElemBtn').onclick = () => {
+    const type = document.getElementById('coordAddType').value;
+    const detailLevel = Number(document.getElementById('coordDetailSelect').value) || 1;
+    const newItem = {
+      id: 'el_' + Date.now(),
+      type,
+      vpId: model.vanishingPoints[0].id,
+      x: 240,
+      y: 160,
+      w: 90,
+      h: 60,
+      r: type === 'point' ? 4 : 24,
+      detailLevel,
+      color: type === 'point' ? '#2e8b57' : '#2b6cb0',
+      lineWidth: 2
+    };
+    model.items.push(newItem);
+    selectedItemId = newItem.id;
+    redraw();
+  };
+
+  document.getElementById('coordAddVpBtn').onclick = () => {
+    model.vanishingPoints.push({
+      id: 'vp_' + Date.now(),
+      label: `VP ${model.vanishingPoints.length + 1}`,
+      x: 120 + model.vanishingPoints.length * 90,
+      y: 60
+    });
+    redraw();
+  };
+
+  document.getElementById('coordExportJsonBtn').onclick = () => {
+    const blob = new Blob([JSON.stringify(model, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${(model.title || 'shape').replace(/\s+/g, '_')}.shape.json`;
+    a.click();
+  };
+
+  document.getElementById('coordExportPngBtn').onclick = () => {
+    const svgStr = renderShapeModelToSvgString(model, { width: 560, height: 320, zoom: activeZoom, showGuides: false });
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = 560;
+      c.height = 320;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0);
+      const a = document.createElement('a');
+      a.href = c.toDataURL('image/png');
+      a.download = `${(model.title || 'shape').replace(/\s+/g, '_')}.png`;
+      a.click();
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
+  };
+
+  document.getElementById('coordImportJsonInput').onchange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result));
+        const norm = normalizeShapeModel(parsed, model.title);
+        model.vanishingPoints = norm.vanishingPoints;
+        model.items = norm.items;
+        selectedItemId = model.items[0]?.id || null;
+        redraw();
+      } catch {
+        alert('Некоректний файл координат .json');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  document.getElementById('coordSaveModelBtn').onclick = () => {
+    closeModal();
+    if (typeof onSaveCallback === 'function') onSaveCallback(model);
+  };
+
+  redraw();
+};
+
+// Дерево коментарів до картки Кодексу (зберігається локально або в attributes.tree_comments)
+function renderCodexCommentTreeNodes(comments = [], entryId, parentCommentId = null, depth = 0) {
+  const children = comments.filter(c => (c.parent_id || null) === parentCommentId);
+  if (!children.length) return '';
+
+  return children.map(c => `
+    <div style="margin-left:${Math.min(48, depth * 16)}px; margin-top:0.45rem; padding:0.5rem 0.7rem; border-left:2px solid var(--accent); border-radius:8px; background:var(--bg-subtle);">
+      <div style="display:flex; justify-content:space-between; gap:0.4rem; font-size:0.8rem;">
+        <strong>${escapeHtml(c.author || 'Мандрівник')}</strong>
+        <button type="button" class="author-link" style="font-size:0.76rem;" onclick="replyToCodexComment('${entryId}', '${c.id}')">↩ Відповісти</button>
+      </div>
+      <div style="font-size:0.88rem; margin-top:0.2rem; white-space:pre-line;">${escapeHtml(c.text)}</div>
+      ${renderCodexCommentTreeNodes(comments, entryId, c.id, depth + 1)}
+    </div>
+  `).join('');
+}
+
+window.replyToCodexComment = async (entryId, parentCommentId = null) => {
+  const user = getCurrentUser();
+  if (!user) return openAuthModal();
+  const entry = (state?.codexEntries || []).find(e => e.id === entryId);
+  if (!entry) return;
+
+  const text = prompt('Напишіть коментар / відповідь у гілку:');
+  if (!text || !text.trim()) return;
+
+  const attrs = { ...(entry.attributes || {}) };
+  const comments = Array.isArray(attrs.tree_comments) ? [...attrs.tree_comments] : [];
+  comments.push({
+    id: 'cmt_' + Date.now(),
+    parent_id: parentCommentId || null,
+    author: user.name || user.email || 'Бард',
+    text: text.trim(),
+    created_at: new Date().toISOString()
+  });
+  attrs.tree_comments = comments;
+
+  try {
+    await TaliesinAPI.updateCodexEntry(entry.id, {
+      title: entry.title,
+      category: entry.category,
+      disciplineId: entry.discipline_id,
+      parentEntryId: entry.parent_entry_id,
+      attributes: attrs,
+      universe: entry.universe,
+      description: entry.description,
+      isShared: entry.is_shared,
+      visualStyle: entry.visual_style,
+      isSystemPrimitive: entry.is_system_primitive
+    });
+    await refresh();
+    renderGlobalCodex();
+  } catch (err) {
+    alert(err.message);
+  }
+};
