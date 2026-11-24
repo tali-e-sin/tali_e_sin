@@ -50,7 +50,7 @@ function renderEntryAttributes(entry) {
   const schemaFields = Array.isArray(disc?.schema_fields) ? disc.schema_fields : [];
 
   const rows = [];
-  const usedKeys = new Set();
+  const usedKeys = new Set(['tree_comments', 'shape_model', 'linked_story_title']);
 
   schemaFields.forEach(f => {
     const val = attrs[f.key];
@@ -61,7 +61,7 @@ function renderEntryAttributes(entry) {
   });
 
   Object.entries(attrs).forEach(([k, v]) => {
-    if (!usedKeys.has(k) && v !== undefined && String(v).trim() !== '') {
+    if (!usedKeys.has(k) && v !== undefined && String(v).trim() !== '' && typeof v !== 'object') {
       rows.push({ label: k, value: String(v) });
     }
   });
